@@ -1,5 +1,23 @@
+use libc::c_int;
+
+use fuser::*;
+
+struct TagFileSystem;
+
+impl Filesystem for TagFileSystem {
+    fn init(&mut self, _req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
+        return Ok(());
+    }
+}
+
+fn main() {
+    TagFileSystem {};
+}
+
 #[cfg(test)]
 mod test {
+    use super::*;
+
     struct Setup<'a> {
         monut_path: &'a str,
     }
@@ -25,7 +43,10 @@ mod test {
     }
 
     #[test]
-    fn mount() {
-        Setup::default();
+    fn mount_unmount() {
+        let stp = Setup::default();
+
+        let sess = spawn_mount2(TagFileSystem {}, stp.monut_path, &[]).unwrap();
+        sess.join();
     }
 }
