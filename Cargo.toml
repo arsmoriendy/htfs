@@ -4,5 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-std = "1.13.0"
 fuser = "0.15.1"
 libc = "0.2.169"
+sqlx = { version = "0.8.3", features = [
+  "macros",
+  "runtime-async-std",
+  "sqlite",
+] }

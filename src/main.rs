@@ -1,21 +1,29 @@
+use async_std::task;
 use libc::c_int;
 
 use fuser::*;
+use sqlx::{Pool, Sqlite};
 
-struct TagFileSystem;
+struct TagFileSystem {
+    pool: Box<Pool<Sqlite>>,
+}
 
 impl Filesystem for TagFileSystem {
     fn init(&mut self, _req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         return Ok(());
     }
+
+    fn destroy(&mut self) {
+        task::block_on(self.pool.close());
+    }
 }
 
-fn main() {
-    TagFileSystem {};
-}
+fn main() {}
 
 #[cfg(test)]
 mod test {
+    use sqlx::SqlitePool;
+
     use super::*;
 
     struct Setup<'a> {
@@ -46,7 +54,9 @@ mod test {
     fn mount_unmount() {
         let stp = Setup::default();
 
-        let sess = spawn_mount2(TagFileSystem {}, stp.monut_path, &[]).unwrap();
+        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory").unwrap());
+
+        let sess = spawn_mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
         sess.join();
     }
 }
