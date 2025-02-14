@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS files (
+  ino INTEGER,
+  size INTEGER,
+  blocks INTEGER,
+  atime INTEGER,
+  mtime INTEGER,
+  ctime INTEGER,
+  crtime INTEGER,
+  kind INTEGER,
+  perm INTEGER,
+  nlink INTEGER,
+  uid INTEGER,
+  gid INTEGER,
+  rdev INTEGER,
+  blksize INTEGER,
+  flags INTEGER,
+);

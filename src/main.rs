@@ -22,7 +22,7 @@ fn main() {}
 
 #[cfg(test)]
 mod test {
-    use sqlx::SqlitePool;
+    use sqlx::{migrate, SqlitePool};
 
     use super::*;
 
@@ -54,9 +54,18 @@ mod test {
     fn mount_unmount() {
         let stp = Setup::default();
 
-        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory").unwrap());
+        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
 
         let sess = spawn_mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
         sess.join();
+    }
+
+    #[test]
+    fn migrate() {
+        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
+
+        task::block_on(migrate!().run(pool.as_ref())).unwrap();
+
+        task::block_on(pool.close());
     }
 }
