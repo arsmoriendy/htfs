@@ -57,8 +57,6 @@ impl Filesystem for TagFileSystem {
     }
 }
 
-fn main() {}
-
 #[cfg(test)]
 mod test {
     use sqlx::{migrate, SqlitePool};
