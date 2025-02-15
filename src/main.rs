@@ -69,14 +69,20 @@ mod test {
         monut_path: &'a str,
     }
 
+    impl Setup<'_> {
+        fn init(&self) {
+            if let Err(e) = std::fs::create_dir(self.monut_path) {
+                panic!("{e}");
+            }
+        }
+    }
+
     impl Default for Setup<'_> {
         fn default() -> Self {
             let ret = Setup {
                 monut_path: "mountpoint",
             };
-            if let Err(e) = std::fs::create_dir(ret.monut_path) {
-                panic!("{e}");
-            }
+            ret.init();
             return ret;
         }
     }
