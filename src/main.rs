@@ -99,6 +99,16 @@ mod test {
         sess.join();
     }
 
+    #[ignore]
+    #[test]
+    fn mount_interactive() {
+        let stp = Setup::default();
+
+        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
+
+        mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
+    }
+
     #[test]
     fn migrate() {
         let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
