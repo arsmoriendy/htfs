@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS files (
-  ino INTEGER,
+CREATE TABLE IF NOT EXISTS file_attrs (
+  ino INTEGER PRIMARY KEY,
   size INTEGER,
   blocks INTEGER,
   atime INTEGER,
