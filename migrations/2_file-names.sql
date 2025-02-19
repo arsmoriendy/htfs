@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS file_names (
+  ino INTEGER PRIMARY KEY,
+  name TEXT
+);
