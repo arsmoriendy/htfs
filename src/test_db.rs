@@ -11,7 +11,7 @@ mod test {
         task::block_on(async {
             migrate!().run(pool.as_ref()).await.unwrap();
 
-            query("SELECT * FROM file_attrs")
+            query("SELECT ino, size, blocks, atime, mtime, ctime, crtime, kind, perm, nlink, uid, gid, rdev, blksize, flags FROM file_attrs")
                 .execute(pool.as_ref())
                 .await
                 .unwrap();
