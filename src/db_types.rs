@@ -39,7 +39,7 @@ pub struct FileAttrRow {
     flags: u32,
 }
 
-impl TryInto<FileAttr> for FileAttrRow {
+impl TryInto<FileAttr> for &FileAttrRow {
     type Error = ();
 
     fn try_into(self) -> Result<FileAttr, Self::Error> {
