@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS file_attrs (
   gid INTEGER,
   rdev INTEGER,
   blksize INTEGER,
-  flags INTEGER,
+  flags INTEGER
 );
