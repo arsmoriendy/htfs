@@ -45,7 +45,7 @@ impl Filesystem for TagFileSystem {
                     kind: FileType::Directory,
 
                     // TODO: permission related, sync with original dir mayhaps?
-                    perm: 0b_111_101_101, // rwx r-x r-x
+                    perm: 0o755, // rwx r-x r-x
 
                     // TODO: user/group related
                     uid: _req.uid(),
