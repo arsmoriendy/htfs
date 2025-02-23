@@ -50,6 +50,7 @@ mod test {
         let stp = Setup::default();
 
         let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
+        task::block_on(migrate!().run(pool.as_ref())).unwrap();
 
         mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
     }
