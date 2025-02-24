@@ -1,4 +1,7 @@
 CREATE TABLE IF NOT EXISTS file_names (
   ino INTEGER PRIMARY KEY,
-  name TEXT
+  name TEXT,
+  FOREIGN KEY (ino) REFERENCES file_attrs(ino)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
 );
