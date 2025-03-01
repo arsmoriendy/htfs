@@ -6,7 +6,7 @@ use async_std::task;
 use db_types::{FileAttrRow, ReadDirRow};
 use fuser::*;
 use libc::c_int;
-use sqlx::{query::QueryAs, query_as, sqlite::SqliteArguments, Error, Pool, Sqlite};
+use sqlx::{query, query::QueryAs, query_as, Error, Pool, Sqlite};
 use std::time::{Duration, SystemTime};
 
 struct TagFileSystem {
@@ -92,7 +92,7 @@ impl Filesystem for TagFileSystem {
         name: &std::ffi::OsStr,
         reply: ReplyEntry,
     ) {
-        let query: QueryAs<'_, Sqlite, FileAttrRow, SqliteArguments<'_>> = match parent {
+        let query: QueryAs<'_, _, FileAttrRow, _> = match parent {
             1 => query_as("SELECT * FROM readdir_rows WHERE name = ?").bind(name.to_str()),
             _ => todo!(),
         };
