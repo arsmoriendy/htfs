@@ -3,7 +3,7 @@ mod test_db;
 mod test_fs;
 
 use async_std::task;
-use db_types::{from_filetype, from_systime, AssociatedTagsRow, FileAttrRow, ReadDirRow};
+use db_types::{from_filetype, from_systime, mode_to_filetype, FileAttrRow, ReadDirRow};
 use fuser::*;
 use libc::c_int;
 use sqlx::{query, query::QueryAs, query_as, Error, Pool, Sqlite};
@@ -28,6 +28,22 @@ impl TagFileSystem {
         }
 
         return 2;
+    }
+
+    async fn get_ass_tag(&self, ino: u64) -> Option<Vec<u64>> {
+        let ptags_res: Result<Vec<(u64,)>, Error> =
+            query_as("SELECT tid FROM associated_tags WHERE ino = ?")
+                .bind(ino as i64)
+                .fetch_all(self.pool.as_ref())
+                .await;
+
+        match ptags_res {
+            Ok(p) => Some(p.iter().map(|r| r.0).collect()),
+            Err(e) => match e {
+                Error::RowNotFound => None,
+                _ => panic!("{e}"),
+            },
+        }
     }
 }
 
@@ -107,6 +123,93 @@ impl Filesystem for TagFileSystem {
                 _ => panic!("{e}"),
             },
         }
+    }
+
+    fn mknod(
+        &mut self,
+        req: &Request<'_>,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        mode: u32,
+        _umask: u32,
+        _rdev: u32,
+        reply: ReplyEntry,
+    ) {
+        task::block_on(async {
+            let kind = mode_to_filetype(mode).unwrap();
+
+            if kind != FileType::RegularFile {
+                println!("tfs currently only supports regular files");
+                reply.error(libc::ENOSYS);
+                return;
+            }
+
+            let ino = self.gen_inode().await;
+            let now = SystemTime::now();
+
+            // TODO: figure out perm/mode S_ISUID/S_ISGID/S_ISVTX (inode(7))
+            let f_attrs = FileAttr {
+                ino,
+                size: 0,
+                blocks: 0,
+                atime: now,
+                mtime: now,
+                ctime: now,
+                crtime: now,
+                kind,
+                perm: mode as u16,
+                nlink: 1,
+                uid: req.uid(),
+                gid: req.gid(),
+                rdev: 0,
+                blksize: 0,
+                flags: 0,
+            };
+
+            let now_s = from_systime(now);
+
+            query("INSERT INTO file_attrs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                .bind(f_attrs.ino as i64) // ino INTEGER PRIMARY KEY,
+                .bind(f_attrs.size as i64) // size INTEGER,
+                .bind(f_attrs.blocks as i64) // blocks INTEGER,
+                .bind(now_s as i64) // atime INTEGER,
+                .bind(now_s as i64) // mtime INTEGER,
+                .bind(now_s as i64) // ctime INTEGER,
+                .bind(now_s as i64) // crtime INTEGER,
+                .bind(from_filetype(f_attrs.kind)) // kind INTEGER,
+                .bind(f_attrs.perm) // perm INTEGER,
+                .bind(f_attrs.nlink) // nlink INTEGER,
+                .bind(f_attrs.uid) // uid INTEGER,
+                .bind(f_attrs.gid) // gid INTEGER,
+                .bind(f_attrs.rdev) // rdev INTEGER,
+                .bind(f_attrs.blksize) // blksize INTEGER,
+                .bind(f_attrs.flags) // flags INTEGER,
+                .execute(self.pool.as_ref())
+                .await
+                .unwrap();
+
+            query("INSERT INTO file_names VALUES (?, ?)")
+                .bind(ino as i64)
+                .bind(name.to_str())
+                .execute(self.pool.as_ref())
+                .await
+                .unwrap();
+
+            // get parent tags
+            if let Some(ptags) = self.get_ass_tag(parent).await {
+                // associate created directory with parent tags
+                for ptag in ptags {
+                    query("INSERT INTO associated_tags VALUES (?, ?)")
+                        .bind(ptag as i64)
+                        .bind(ino as i64)
+                        .execute(self.pool.as_ref())
+                        .await
+                        .unwrap();
+                }
+            };
+
+            reply.entry(&Duration::from_secs(1), &f_attrs, 0);
+        });
     }
 
     fn readdir(
@@ -240,29 +343,17 @@ impl Filesystem for TagFileSystem {
                 .unwrap();
 
             // get parent tags
-            let ptags_res: Result<Vec<AssociatedTagsRow>, Error> =
-                query_as("SELECT * FROM associated_tags WHERE ino = ?")
-                    .bind(parent as i64)
-                    .fetch_all(self.pool.as_ref())
-                    .await;
-
-            let ptags = match ptags_res {
-                Ok(p) => p,
-                Err(e) => match e {
-                    Error::RowNotFound => vec![],
-                    _ => todo!("{e}"),
-                },
+            if let Some(ptags) = self.get_ass_tag(parent).await {
+                // associate created directory with parent tags
+                for ptag in ptags {
+                    query("INSERT INTO associated_tags VALUES (?, ?)")
+                        .bind(ptag as i64)
+                        .bind(ino as i64)
+                        .execute(self.pool.as_ref())
+                        .await
+                        .unwrap();
+                }
             };
-
-            // associate created directory with parent tags
-            for ptag in ptags {
-                query("INSERT INTO associated_tags VALUES (?, ?)")
-                    .bind(ptag.tid as i64)
-                    .bind(ino as i64)
-                    .execute(self.pool.as_ref())
-                    .await
-                    .unwrap();
-            }
 
             reply.entry(&Duration::from_secs(1), &f_attrs, 1);
         });

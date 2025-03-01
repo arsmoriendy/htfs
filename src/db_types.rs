@@ -28,6 +28,19 @@ pub fn to_filetype(n: u8) -> Result<FileType, ()> {
     })
 }
 
+pub fn mode_to_filetype(mut mode: u32) -> Result<FileType, ()> {
+    mode &= libc::S_IFMT;
+    Ok(match mode {
+        libc::S_IFSOCK => FileType::Socket,
+        libc::S_IFLNK => FileType::Symlink,
+        libc::S_IFREG => FileType::RegularFile,
+        libc::S_IFBLK => FileType::BlockDevice,
+        libc::S_IFDIR => FileType::Directory,
+        libc::S_IFCHR => FileType::CharDevice,
+        _ => return Err(()),
+    })
+}
+
 pub fn from_systime(st: SystemTime) -> u64 {
     st.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
 }
