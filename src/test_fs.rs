@@ -67,27 +67,32 @@ mod test {
 
         for _ in 1..=1000 {
             task::block_on(async {
-                let inode = tfs.gen_inode().await as i64;
-
-                query("INSERT INTO file_attrs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-                    .bind(inode) // ino INTEGER PRIMARY KEY,
-                    .bind(0) // size INTEGER,
-                    .bind(0) // blocks INTEGER,
-                    .bind(0) // atime INTEGER,
-                    .bind(0) // mtime INTEGER,
-                    .bind(0) // ctime INTEGER,
-                    .bind(0) // crtime INTEGER,
-                    .bind(4) // kind INTEGER,
-                    .bind(0o777) // perm INTEGER,
-                    .bind(1) // nlink INTEGER,
-                    .bind(1000) // uid INTEGER,
-                    .bind(1000) // gid INTEGER,
-                    .bind(0) // rdev INTEGER,
-                    .bind(0) // blksize INTEGER,
-                    .bind(0) // flags INTEGER,
-                    .execute(tfs.pool.as_ref())
-                    .await
-                    .unwrap();
+                let now = SystemTime::now();
+                let inode = ins_attrs!(
+                    query_as::<_, (i64,)>,
+                    FileAttr {
+                        ino: 0,
+                        size: 0,
+                        blocks: 0,
+                        atime: now,
+                        mtime: now,
+                        ctime: now,
+                        crtime: now,
+                        kind: FileType::RegularFile,
+                        perm: 0o777,
+                        nlink: 1,
+                        uid: 1000,
+                        gid: 1000,
+                        rdev: 0,
+                        blksize: 0,
+                        flags: 0,
+                    },
+                    "RETURNING ino"
+                )
+                .fetch_one(tfs.pool.as_ref())
+                .await
+                .unwrap()
+                .0;
 
                 query("INSERT INTO file_names VALUES(?,?)")
                     .bind(inode)

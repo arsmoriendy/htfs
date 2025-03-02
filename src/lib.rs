@@ -14,22 +14,6 @@ struct TagFileSystem {
 }
 
 impl TagFileSystem {
-    async fn gen_inode(&self) -> u64 {
-        let last_res: Option<(i64,)> =
-            query_as("SELECT ino FROM file_attrs ORDER BY ino DESC LIMIT 1")
-                .fetch_optional(self.pool.as_ref())
-                .await
-                .unwrap();
-
-        if let Some(last) = last_res {
-            if last.0 >= 2 {
-                return (last.0 + 1) as u64;
-            }
-        }
-
-        return 2;
-    }
-
     async fn get_ass_tag(&self, ino: u64) -> Option<Vec<u64>> {
         let ptags_res: Result<Vec<(u64,)>, Error> =
             query_as("SELECT tid FROM associated_tags WHERE ino = ?")
@@ -48,7 +32,47 @@ impl TagFileSystem {
 }
 
 impl Filesystem for TagFileSystem {
-    fn init(&mut self, _req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
+    fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
+        task::block_on(async {
+            if let None = query("SELECT 1 FROM file_attrs WHERE ino = 1")
+                .fetch_optional(self.pool.as_ref())
+                .await
+                .unwrap()
+            {
+                ins_attrs!(
+                    query,
+                    FileAttr {
+                        ino: 0,
+                        nlink: 1,
+                        rdev: 0,
+
+                        // TODO: size related
+                        size: 0,
+                        blocks: 0,
+
+                        // TODO: time related
+                        atime: SystemTime::now(),
+                        mtime: SystemTime::now(),
+                        ctime: SystemTime::now(),
+                        crtime: SystemTime::now(),
+                        kind: FileType::Directory,
+
+                        // TODO: permission related, sync with original dir mayhaps?
+                        perm: 0o755, // rwx r-x r-x
+
+                        uid: req.uid(),
+                        gid: req.gid(),
+
+                        // TODO: misc
+                        blksize: 0,
+                        flags: 0,
+                    }
+                )
+                .execute(self.pool.as_ref())
+                .await
+                .unwrap();
+            };
+        });
         return Ok(());
     }
 
@@ -57,48 +81,19 @@ impl Filesystem for TagFileSystem {
     }
 
     fn getattr(&mut self, _req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
-        let attr = match ino {
-            1 => FileAttr {
-                ino: 1,
-                nlink: 1,
-                rdev: 0,
-
-                // TODO: size related
-                size: 0,
-                blocks: 0,
-
-                // TODO: time related
-                atime: SystemTime::UNIX_EPOCH,
-                mtime: SystemTime::UNIX_EPOCH,
-                ctime: SystemTime::UNIX_EPOCH,
-                crtime: SystemTime::UNIX_EPOCH,
-
-                kind: FileType::Directory,
-
-                // TODO: permission related, sync with original dir mayhaps?
-                perm: 0o755, // rwx r-x r-x
-
-                // TODO: user/group related
-                uid: _req.uid(),
-                gid: _req.gid(),
-
-                // TODO: misc
-                blksize: 0,
-                flags: 0,
-            },
-            _ => {
-                let row: FileAttrRow = task::block_on(
-                    query_as("SELECT * FROM file_attrs WHERE ino = ?")
-                        .bind(ino as i64)
-                        .fetch_one(self.pool.as_ref()),
-                )
-                .unwrap();
-
-                row.into()
-            }
-        };
-
-        reply.attr(&Duration::from_secs(1), &attr);
+        task::block_on(async {
+            match query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
+                .bind(ino as i64)
+                .fetch_one(self.pool.as_ref())
+                .await
+            {
+                Ok(r) => reply.attr(&Duration::from_secs(1), &r.into()),
+                Err(e) => match e {
+                    Error::RowNotFound => reply.error(libc::ENOENT),
+                    _ => panic!("{e}"),
+                },
+            };
+        });
     }
 
     fn lookup(
@@ -136,20 +131,21 @@ impl Filesystem for TagFileSystem {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
+            // TODO: handle duplicates
+
             let kind = mode_to_filetype(mode).unwrap();
 
             if kind != FileType::RegularFile {
-                println!("tfs currently only supports regular files");
+                eprintln!("tfs currently only supports regular files");
                 reply.error(libc::ENOSYS);
                 return;
             }
 
-            let ino = self.gen_inode().await;
             let now = SystemTime::now();
 
             // TODO: figure out perm/mode S_ISUID/S_ISGID/S_ISVTX (inode(7))
             let f_attrs = FileAttr {
-                ino,
+                ino: 0,
                 size: 0,
                 blocks: 0,
                 atime: now,
@@ -166,27 +162,11 @@ impl Filesystem for TagFileSystem {
                 flags: 0,
             };
 
-            let now_s = from_systime(now);
-
-            query("INSERT INTO file_attrs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-                .bind(f_attrs.ino as i64) // ino INTEGER PRIMARY KEY,
-                .bind(f_attrs.size as i64) // size INTEGER,
-                .bind(f_attrs.blocks as i64) // blocks INTEGER,
-                .bind(now_s as i64) // atime INTEGER,
-                .bind(now_s as i64) // mtime INTEGER,
-                .bind(now_s as i64) // ctime INTEGER,
-                .bind(now_s as i64) // crtime INTEGER,
-                .bind(from_filetype(f_attrs.kind)) // kind INTEGER,
-                .bind(f_attrs.perm) // perm INTEGER,
-                .bind(f_attrs.nlink) // nlink INTEGER,
-                .bind(f_attrs.uid) // uid INTEGER,
-                .bind(f_attrs.gid) // gid INTEGER,
-                .bind(f_attrs.rdev) // rdev INTEGER,
-                .bind(f_attrs.blksize) // blksize INTEGER,
-                .bind(f_attrs.flags) // flags INTEGER,
-                .execute(self.pool.as_ref())
+            let ino: u64 = ins_attrs!(query_as::<_, (u64,)>, f_attrs, "RETURNING ino")
+                .fetch_one(self.pool.as_ref())
                 .await
-                .unwrap();
+                .unwrap()
+                .0;
 
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(ino as i64)
@@ -251,14 +231,14 @@ impl Filesystem for TagFileSystem {
         task::block_on(async {
             // TODO: parent permissions, need impl mountpoint FileAttrs first (for if ino = 1)
             // TODO: update parent time attrs
+            // TODO: handle duplicates
 
-            let ino = self.gen_inode().await;
             let now = SystemTime::now();
 
             // TODO: size
             // TODO: figure out perm/mode S_ISUID/S_ISGID/S_ISVTX (inode(7))
             let f_attrs = FileAttr {
-                ino,
+                ino: 0,
                 size: 0,
                 blocks: 0,
                 atime: now,
@@ -275,27 +255,11 @@ impl Filesystem for TagFileSystem {
                 flags: 0,
             };
 
-            let now_s = from_systime(now);
-
-            query("INSERT INTO file_attrs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-                .bind(f_attrs.ino as i64) // ino INTEGER PRIMARY KEY,
-                .bind(f_attrs.size as i64) // size INTEGER,
-                .bind(f_attrs.blocks as i64) // blocks INTEGER,
-                .bind(now_s as i64) // atime INTEGER,
-                .bind(now_s as i64) // mtime INTEGER,
-                .bind(now_s as i64) // ctime INTEGER,
-                .bind(now_s as i64) // crtime INTEGER,
-                .bind(from_filetype(f_attrs.kind)) // kind INTEGER,
-                .bind(f_attrs.perm) // perm INTEGER,
-                .bind(f_attrs.nlink) // nlink INTEGER,
-                .bind(f_attrs.uid) // uid INTEGER,
-                .bind(f_attrs.gid) // gid INTEGER,
-                .bind(f_attrs.rdev) // rdev INTEGER,
-                .bind(f_attrs.blksize) // blksize INTEGER,
-                .bind(f_attrs.flags) // flags INTEGER,
-                .execute(self.pool.as_ref())
+            let ino: u64 = ins_attrs!(query_as::<_, (u64,)>, f_attrs, "RETURNING ino")
+                .fetch_one(self.pool.as_ref())
                 .await
-                .unwrap();
+                .unwrap()
+                .0;
 
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(ino as i64)
