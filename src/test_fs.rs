@@ -1,108 +1,95 @@
 #[cfg(test)]
 mod test {
-    use sqlx::{migrate, query, SqlitePool};
+    use std::{
+        fs::{remove_file, File},
+        io::{self, Read},
+        str::FromStr,
+        thread::sleep,
+    };
+
+    use sqlx::{migrate, query, sqlite::SqliteConnectOptions, SqlitePool};
 
     use crate::*;
 
     struct Setup<'a> {
-        monut_path: &'a str,
+        mount_path: &'a str,
+        db_path: &'a str,
+        pool: &'a Pool<Sqlite>,
+        bg_sess: Option<BackgroundSession>,
     }
 
-    impl Setup<'_> {
-        fn init(&self) {
-            if let Err(e) = std::fs::create_dir(self.monut_path) {
+    impl Default for Setup<'static> {
+        fn default() -> Self {
+            let mount_path = "mountpoint";
+            if let Err(e) = std::fs::create_dir(mount_path) {
                 panic!("{e}");
             }
-        }
-    }
 
-    impl Default for Setup<'_> {
-        fn default() -> Self {
-            let ret = Setup {
-                monut_path: "mountpoint",
-            };
-            ret.init();
-            return ret;
+            let db_path = "tfs_test.sqlite";
+            File::create(db_path).unwrap();
+
+            let pool = task::block_on(async {
+                let pool: &'static Pool<Sqlite> = Box::leak(Box::new(
+                    SqlitePool::connect_with(
+                        SqliteConnectOptions::from_str(format!("sqlite:{}", db_path).as_str())
+                            .unwrap()
+                            .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
+                            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
+                    )
+                    .await
+                    .unwrap(),
+                ));
+
+                migrate!().run(pool).await.unwrap();
+
+                pool
+            });
+
+            let bg_sess = spawn_mount2(TagFileSystem { pool }, mount_path, &[]).unwrap();
+
+            // wait for initialization
+            task::block_on(async {
+                loop {
+                    if let Some(_) = query("SELECT 1 FROM file_attrs WHERE ino = 1")
+                        .fetch_optional(pool)
+                        .await
+                        .unwrap()
+                    {
+                        break;
+                    };
+                }
+            });
+
+            Setup {
+                mount_path,
+                db_path,
+                pool,
+                bg_sess: Some(bg_sess),
+            }
         }
     }
 
     impl Drop for Setup<'_> {
         fn drop(&mut self) {
-            if let Err(e) = std::fs::remove_dir_all(self.monut_path) {
+            self.bg_sess.take().unwrap().join();
+
+            if let Err(e) = std::fs::remove_dir(self.mount_path) {
                 panic!("{e}");
             }
+
+            remove_file(self.db_path).unwrap();
         }
-    }
-
-    #[test]
-    fn mount_unmount() {
-        let stp = Setup::default();
-
-        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
-
-        let sess = spawn_mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
-        sess.join();
     }
 
     #[ignore]
     #[test]
     fn mount_interactive() {
-        let stp = Setup::default();
+        task::block_on(async {
+            Setup::default();
 
-        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
-        task::block_on(migrate!().run(pool.as_ref())).unwrap();
-
-        mount2(TagFileSystem { pool }, stp.monut_path, &[]).unwrap();
-    }
-
-    #[ignore]
-    #[test]
-    fn readdir_interactive() {
-        let stp = Setup::default();
-
-        let pool = Box::new(SqlitePool::connect_lazy("sqlite::memory:").unwrap());
-        task::block_on(migrate!().run(pool.as_ref())).unwrap();
-
-        let tfs = TagFileSystem { pool };
-
-        for _ in 1..=1000 {
-            task::block_on(async {
-                let now = SystemTime::now();
-                let inode = ins_attrs!(
-                    query_as::<_, (i64,)>,
-                    FileAttr {
-                        ino: 0,
-                        size: 0,
-                        blocks: 0,
-                        atime: now,
-                        mtime: now,
-                        ctime: now,
-                        crtime: now,
-                        kind: FileType::RegularFile,
-                        perm: 0o777,
-                        nlink: 1,
-                        uid: 1000,
-                        gid: 1000,
-                        rdev: 0,
-                        blksize: 0,
-                        flags: 0,
-                    },
-                    "RETURNING ino"
-                )
-                .fetch_one(tfs.pool.as_ref())
-                .await
-                .unwrap()
-                .0;
-
-                query("INSERT INTO file_names VALUES(?,?)")
-                    .bind(inode)
-                    .bind(format!("filname-{}", inode))
-                    .execute(tfs.pool.as_ref())
-                    .await
-                    .unwrap()
-            });
-        }
-
-        mount2(tfs, stp.monut_path, &[]).unwrap();
+            println!("press enter key to dismount...");
+            let mut buf: [u8; 1] = [0];
+            io::stdin().read_exact(&mut buf).unwrap();
+        });
     }
 }
