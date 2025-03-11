@@ -11,16 +11,16 @@ use libc::c_int;
 use sqlx::{query, query_as, Error, Pool, QueryBuilder, Sqlite};
 use std::time::{Duration, SystemTime};
 
-struct TagFileSystem {
-    pool: Box<Pool<Sqlite>>,
+struct TagFileSystem<'a> {
+    pool: &'a Pool<Sqlite>,
 }
 
-impl TagFileSystem {
+impl TagFileSystem<'_> {
     async fn get_ass_tags(&self, ino: u64) -> Vec<u64> {
         let ptags_res: Result<Vec<(u64,)>, Error> =
             query_as("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(ino as i64)
-                .fetch_all(self.pool.as_ref())
+                .fetch_all(self.pool)
                 .await;
 
         match ptags_res {
@@ -30,11 +30,11 @@ impl TagFileSystem {
     }
 }
 
-impl Filesystem for TagFileSystem {
+impl Filesystem for TagFileSystem<'_> {
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         task::block_on(async {
             if let None = query("SELECT 1 FROM file_attrs WHERE ino = 1")
-                .fetch_optional(self.pool.as_ref())
+                .fetch_optional(self.pool)
                 .await
                 .unwrap()
             {
@@ -66,7 +66,7 @@ impl Filesystem for TagFileSystem {
                         flags: 0,
                     }
                 )
-                .execute(self.pool.as_ref())
+                .execute(self.pool)
                 .await
                 .unwrap();
             };
@@ -82,7 +82,7 @@ impl Filesystem for TagFileSystem {
         task::block_on(async {
             match query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
                 .bind(ino as i64)
-                .fetch_one(self.pool.as_ref())
+                .fetch_one(self.pool)
                 .await
             {
                 Ok(r) => reply.attr(&Duration::from_secs(1), &r.into()),
@@ -130,7 +130,7 @@ impl Filesystem for TagFileSystem {
 
             match query_builder
                 .build_query_as::<ReadDirRow>()
-                .fetch_optional(self.pool.as_ref())
+                .fetch_optional(self.pool)
                 .await
                 .unwrap()
             {
@@ -186,7 +186,7 @@ impl Filesystem for TagFileSystem {
             };
 
             let ino: u64 = ins_attrs!(query_as::<_, (u64,)>, f_attrs, "RETURNING ino")
-                .fetch_one(self.pool.as_ref())
+                .fetch_one(self.pool)
                 .await
                 .unwrap()
                 .0;
@@ -194,7 +194,7 @@ impl Filesystem for TagFileSystem {
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(ino as i64)
                 .bind(name.to_str())
-                .execute(self.pool.as_ref())
+                .execute(self.pool)
                 .await
                 .unwrap();
 
@@ -203,7 +203,7 @@ impl Filesystem for TagFileSystem {
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(ptag as i64)
                     .bind(ino as i64)
-                    .execute(self.pool.as_ref())
+                    .execute(self.pool)
                     .await
                     .unwrap();
             }
@@ -249,7 +249,7 @@ impl Filesystem for TagFileSystem {
 
             match query_builder
                 .build_query_as::<ReadDirRow>()
-                .fetch_all(self.pool.as_ref())
+                .fetch_all(self.pool)
                 .await
             {
                 Ok(rows) => {
@@ -311,7 +311,7 @@ impl Filesystem for TagFileSystem {
             };
 
             let ino: u64 = ins_attrs!(query_as::<_, (u64,)>, f_attrs, "RETURNING ino")
-                .fetch_one(self.pool.as_ref())
+                .fetch_one(self.pool)
                 .await
                 .unwrap()
                 .0;
@@ -319,14 +319,14 @@ impl Filesystem for TagFileSystem {
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(ino as i64)
                 .bind(name.to_str())
-                .execute(self.pool.as_ref())
+                .execute(self.pool)
                 .await
                 .unwrap();
 
             if let Err(e) = query("INSERT INTO dir_contents VALUES (?, ?)")
                 .bind(parent as i64)
                 .bind(ino as i64)
-                .execute(self.pool.as_ref())
+                .execute(self.pool)
                 .await
             {
                 panic!("{e}")
@@ -335,7 +335,7 @@ impl Filesystem for TagFileSystem {
             // create tag if doesn't exists
             let tid = match query_as::<_, (u64,)>("SELECT tid FROM tags WHERE name = ?")
                 .bind(name.to_str())
-                .fetch_optional(self.pool.as_ref())
+                .fetch_optional(self.pool)
                 .await
                 .unwrap()
             {
@@ -343,7 +343,7 @@ impl Filesystem for TagFileSystem {
                 None => {
                     query_as::<_, (u64,)>("INSERT INTO tags(name) VALUES (?) RETURNING tid")
                         .bind(name.to_str())
-                        .fetch_one(self.pool.as_ref())
+                        .fetch_one(self.pool)
                         .await
                         .unwrap()
                         .0
@@ -354,7 +354,7 @@ impl Filesystem for TagFileSystem {
             query("INSERT INTO associated_tags VALUES (?, ?)")
                 .bind(tid as i64)
                 .bind(ino as i64)
-                .execute(self.pool.as_ref())
+                .execute(self.pool)
                 .await
                 .unwrap();
 
@@ -363,7 +363,7 @@ impl Filesystem for TagFileSystem {
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(ptag as i64)
                     .bind(ino as i64)
-                    .execute(self.pool.as_ref())
+                    .execute(self.pool)
                     .await
                     .unwrap();
             }
@@ -380,11 +380,11 @@ impl Filesystem for TagFileSystem {
         reply: ReplyEmpty,
     ) {
         task::block_on(async {
-            match  query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?").bind(parent as i64).bind(name.to_str().unwrap()).fetch_optional(self.pool.as_ref()).await.unwrap(){
+            match  query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?").bind(parent as i64).bind(name.to_str().unwrap()).fetch_optional(self.pool).await.unwrap(){
                 Some(r)=>{
                     if let Err(e) = query("DELETE FROM file_attrs WHERE ino = ?")
                         .bind(r.0)
-                        .execute(self.pool.as_ref())
+                        .execute(self.pool)
                         .await
                     {
                         panic!("{e}");
@@ -430,14 +430,14 @@ impl Filesystem for TagFileSystem {
 
             match query_builder
                 .build_query_as::<FileAttrRow>()
-                .fetch_optional(self.pool.as_ref())
+                .fetch_optional(self.pool)
                 .await
                 .unwrap()
             {
                 Some(r) => {
                     if let Err(e) = query("DELETE FROM file_attrs WHERE ino = ?")
                         .bind(r.ino as i64)
-                        .execute(self.pool.as_ref())
+                        .execute(self.pool)
                         .await
                     {
                         panic!("{e}");
