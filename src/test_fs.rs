@@ -4,7 +4,6 @@ mod test {
         fs::{remove_file, File},
         io::{self, Read},
         str::FromStr,
-        thread::sleep,
     };
 
     use sqlx::{migrate, query, sqlite::SqliteConnectOptions, SqlitePool};
