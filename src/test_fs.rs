@@ -3,6 +3,7 @@ mod test {
     use std::{
         fs::{remove_file, File},
         io::{self, Read},
+        path::PathBuf,
         str::FromStr,
     };
 
@@ -10,30 +11,32 @@ mod test {
 
     use crate::*;
 
-    struct Setup<'a> {
-        mount_path: &'a str,
-        db_path: &'a str,
-        pool: &'a Pool<Sqlite>,
+    struct Setup {
+        mount_path: PathBuf,
+        db_path: PathBuf,
+        pool: &'static Pool<Sqlite>,
         bg_sess: Option<BackgroundSession>,
     }
 
-    impl Default for Setup<'static> {
+    impl Default for Setup {
         fn default() -> Self {
-            let mount_path = "mountpoint";
-            if let Err(e) = std::fs::create_dir(mount_path) {
+            let mount_path = PathBuf::from("mountpoint");
+            if let Err(e) = std::fs::create_dir(&mount_path) {
                 panic!("{e}");
             }
 
-            let db_path = "tfs_test.sqlite";
-            File::create(db_path).unwrap();
+            let db_path = PathBuf::from("tfs_test.sqlite");
+            File::create(&db_path).unwrap();
 
             let pool = task::block_on(async {
                 let pool: &'static Pool<Sqlite> = Box::leak(Box::new(
                     SqlitePool::connect_with(
-                        SqliteConnectOptions::from_str(format!("sqlite:{}", db_path).as_str())
-                            .unwrap()
-                            .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
-                            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
+                        SqliteConnectOptions::from_str(
+                            format!("sqlite:{}", db_path.to_str().unwrap()).as_str(),
+                        )
+                        .unwrap()
+                        .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
+                        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
                     )
                     .await
                     .unwrap(),
@@ -44,7 +47,7 @@ mod test {
                 pool
             });
 
-            let bg_sess = spawn_mount2(TagFileSystem { pool }, mount_path, &[]).unwrap();
+            let bg_sess = spawn_mount2(TagFileSystem { pool }, &mount_path, &[]).unwrap();
 
             // wait for initialization
             task::block_on(async {
@@ -68,27 +71,25 @@ mod test {
         }
     }
 
-    impl Drop for Setup<'_> {
+    impl Drop for Setup {
         fn drop(&mut self) {
             self.bg_sess.take().unwrap().join();
 
-            if let Err(e) = std::fs::remove_dir(self.mount_path) {
+            if let Err(e) = std::fs::remove_dir(&self.mount_path) {
                 panic!("{e}");
             }
 
-            remove_file(self.db_path).unwrap();
+            remove_file(&self.db_path).unwrap();
         }
     }
 
     #[ignore]
     #[test]
     fn mount_interactive() {
-        task::block_on(async {
-            Setup::default();
+        let _stp = Setup::default();
 
-            println!("press enter key to dismount...");
-            let mut buf: [u8; 1] = [0];
-            io::stdin().read_exact(&mut buf).unwrap();
-        });
+        println!("press enter key to dismount...");
+        let mut buf: [u8; 1] = [0];
+        io::stdin().read_exact(&mut buf).unwrap();
     }
 }
