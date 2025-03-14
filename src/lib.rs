@@ -28,6 +28,18 @@ impl TagFileSystem<'_> {
             Err(e) => panic!("{e}"),
         }
     }
+
+    async fn sync_mtime(&self, ino: u64) -> Result<(), Error> {
+        match query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
+            .bind(from_systime(SystemTime::now()) as i64)
+            .bind(ino as i64)
+            .execute(self.pool)
+            .await
+        {
+            Err(e) => Err(e),
+            Ok(_) => Ok(()),
+        }
+    }
 }
 
 impl Filesystem for TagFileSystem<'_> {
@@ -208,6 +220,8 @@ impl Filesystem for TagFileSystem<'_> {
                     .unwrap();
             }
 
+            self.sync_mtime(parent).await.unwrap();
+
             reply.entry(&Duration::from_secs(1), &f_attrs, 0);
         });
     }
@@ -285,7 +299,6 @@ impl Filesystem for TagFileSystem<'_> {
     ) {
         task::block_on(async {
             // TODO: parent permissions, need impl mountpoint FileAttrs first (for if ino = 1)
-            // TODO: update parent time attrs
             // TODO: handle duplicates
 
             let now = SystemTime::now();
@@ -367,6 +380,8 @@ impl Filesystem for TagFileSystem<'_> {
                     .await
                     .unwrap();
             }
+
+            self.sync_mtime(parent).await.unwrap();
 
             reply.entry(&Duration::from_secs(1), &f_attrs, 1);
         });
