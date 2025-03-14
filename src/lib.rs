@@ -40,6 +40,18 @@ impl TagFileSystem<'_> {
             Ok(_) => Ok(()),
         }
     }
+
+    async fn sync_atime(&self, ino: u64) -> Result<(), Error> {
+        match query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
+            .bind(from_systime(SystemTime::now()) as i64)
+            .bind(ino as i64)
+            .execute(self.pool)
+            .await
+        {
+            Err(e) => Err(e),
+            Ok(_) => Ok(()),
+        }
+    }
 }
 
 impl Filesystem for TagFileSystem<'_> {
@@ -267,7 +279,6 @@ impl Filesystem for TagFileSystem<'_> {
                 .await
             {
                 Ok(rows) => {
-                    // println!("{ino}\t{:?}", rows);
                     for row in rows.iter().enumerate() {
                         let attr = &row.1.attr;
                         let name = &row.1.name;
