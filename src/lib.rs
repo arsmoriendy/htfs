@@ -454,6 +454,7 @@ impl Filesystem for TagFileSystem<'_> {
                     {
                         panic!("{e}");
                     };
+                    reply.ok();
 
                 },
                 None=>reply.error(libc::ENOENT),
