@@ -355,7 +355,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             // TODO: size
             // TODO: figure out perm/mode S_ISUID/S_ISGID/S_ISVTX (inode(7))
-            let f_attrs = FileAttr {
+            let mut f_attrs = FileAttr {
                 ino: 0,
                 size: 0,
                 blocks: 0,
@@ -378,6 +378,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .await
                 .unwrap()
                 .0;
+            f_attrs.ino = ino;
 
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(ino as i64)
