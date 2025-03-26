@@ -7,7 +7,7 @@ use sqlx::FromRow;
 macro_rules! ins_attrs {
     ($q: expr, $a: expr, $extra_args: expr) => {
         $q(format!(
-            "INSERT INTO file_attrs(size, blocks, atime, mtime, ctime, crtime, kind, perm, nlink, uid, gid, rdev, blksize, flags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) {}",
+            "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) {}",
             $extra_args
         ).as_str())
         .bind($a.size as i64) // size INTEGER,
