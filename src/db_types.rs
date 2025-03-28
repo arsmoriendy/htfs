@@ -4,29 +4,22 @@ use fuser::{FileAttr, FileType};
 use sqlx::FromRow;
 
 #[macro_export]
-macro_rules! ins_attrs {
-    ($q: expr, $a: expr, $extra_args: expr) => {
-        $q(format!(
-            "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) {}",
-            $extra_args
-        ).as_str())
-        .bind($a.size as i64) // size INTEGER,
-        .bind($a.blocks as i64) // blocks INTEGER,
-        .bind(from_systime($a.atime) as i64) // atime INTEGER,
-        .bind(from_systime($a.mtime) as i64) // mtime INTEGER,
-        .bind(from_systime($a.ctime) as i64) // ctime INTEGER,
-        .bind(from_systime($a.crtime) as i64) // crtime INTEGER,
-        .bind(from_filetype($a.kind)) // kind INTEGER,
-        .bind($a.perm) // perm INTEGER,
-        .bind($a.nlink) // nlink INTEGER,
-        .bind($a.uid) // uid INTEGER,
-        .bind($a.gid) // gid INTEGER,
-        .bind($a.rdev) // rdev INTEGER,
-        .bind($a.blksize) // blksize INTEGER,
-        .bind($a.flags) // flags INTEGER,
-    };
+macro_rules! bind_attrs {
     ($q: expr, $a: expr) => {
-        ins_attrs!($q, $a, "")
+        $q.bind($a.size as i64) // size INTEGER,
+            .bind($a.blocks as i64) // blocks INTEGER,
+            .bind(from_systime($a.atime) as i64) // atime INTEGER,
+            .bind(from_systime($a.mtime) as i64) // mtime INTEGER,
+            .bind(from_systime($a.ctime) as i64) // ctime INTEGER,
+            .bind(from_systime($a.crtime) as i64) // crtime INTEGER,
+            .bind(from_filetype($a.kind)) // kind INTEGER,
+            .bind($a.perm) // perm INTEGER,
+            .bind($a.nlink) // nlink INTEGER,
+            .bind($a.uid) // uid INTEGER,
+            .bind($a.gid) // gid INTEGER,
+            .bind($a.rdev) // rdev INTEGER,
+            .bind($a.blksize) // blksize INTEGER,
+            .bind($a.flags) // flags INTEGER,
     };
 }
 

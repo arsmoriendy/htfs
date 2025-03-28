@@ -15,6 +15,14 @@ pub struct TagFileSystem<'a> {
 }
 
 impl TagFileSystem<'_> {
+    async fn ins_attrs(&self, attr: &FileAttr) -> u64 {
+        bind_attrs!(query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ino"), attr)
+            .fetch_one(self.pool)
+            .await
+            .unwrap()
+            .0
+    }
+
     async fn get_ass_tags(&self, ino: u64) -> Vec<u64> {
         let ptags_res: Result<Vec<(u64,)>, Error> =
             query_as("SELECT tid FROM associated_tags WHERE ino = ?")
@@ -100,37 +108,32 @@ impl Filesystem for TagFileSystem<'_> {
                 .await
                 .unwrap()
             {
-                ins_attrs!(
-                    query,
-                    FileAttr {
-                        ino: 0,
-                        nlink: 1,
-                        rdev: 0,
+                self.ins_attrs(&FileAttr {
+                    ino: 0,
+                    nlink: 1,
+                    rdev: 0,
 
-                        // TODO: size related
-                        size: 0,
-                        blocks: 0,
+                    // TODO: size related
+                    size: 0,
+                    blocks: 0,
 
-                        atime: SystemTime::now(),
-                        mtime: SystemTime::now(),
-                        ctime: SystemTime::now(),
-                        crtime: SystemTime::now(),
-                        kind: FileType::Directory,
+                    atime: SystemTime::now(),
+                    mtime: SystemTime::now(),
+                    ctime: SystemTime::now(),
+                    crtime: SystemTime::now(),
+                    kind: FileType::Directory,
 
-                        // TODO: permission related, sync with original dir mayhaps?
-                        perm: 0o777,
+                    // TODO: permission related, sync with original dir mayhaps?
+                    perm: 0o777,
 
-                        uid: req.uid(),
-                        gid: req.gid(),
+                    uid: req.uid(),
+                    gid: req.gid(),
 
-                        // TODO: misc
-                        blksize: 0,
-                        flags: 0,
-                    }
-                )
-                .execute(self.pool)
-                .await
-                .unwrap();
+                    // TODO: misc
+                    blksize: 0,
+                    flags: 0,
+                })
+                .await;
             };
         });
         return Ok(());
@@ -373,15 +376,10 @@ impl Filesystem for TagFileSystem<'_> {
                 flags: 0,
             };
 
-            let ino: u64 = ins_attrs!(query_as::<_, (u64,)>, f_attrs, "RETURNING ino")
-                .fetch_one(self.pool)
-                .await
-                .unwrap()
-                .0;
-            f_attrs.ino = ino;
+            f_attrs.ino = self.ins_attrs(&f_attrs).await;
 
             query("INSERT INTO file_names VALUES (?, ?)")
-                .bind(ino as i64)
+                .bind(f_attrs.ino as i64)
                 .bind(name.to_str())
                 .execute(self.pool)
                 .await
@@ -389,7 +387,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             if let Err(e) = query("INSERT INTO dir_contents VALUES (?, ?)")
                 .bind(parent as i64)
-                .bind(ino as i64)
+                .bind(f_attrs.ino as i64)
                 .execute(self.pool)
                 .await
             {
@@ -417,7 +415,7 @@ impl Filesystem for TagFileSystem<'_> {
             // associate created directory with the tid above
             query("INSERT INTO associated_tags VALUES (?, ?)")
                 .bind(tid as i64)
-                .bind(ino as i64)
+                .bind(f_attrs.ino as i64)
                 .execute(self.pool)
                 .await
                 .unwrap();
@@ -426,7 +424,7 @@ impl Filesystem for TagFileSystem<'_> {
             for ptag in self.get_ass_tags(parent).await {
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(ptag as i64)
-                    .bind(ino as i64)
+                    .bind(f_attrs.ino as i64)
                     .execute(self.pool)
                     .await
                     .unwrap();
