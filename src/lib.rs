@@ -161,12 +161,16 @@ impl Filesystem for TagFileSystem<'_> {
 
     fn lookup(
         &mut self,
-        _req: &Request<'_>,
+        req: &Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: ReplyEntry,
     ) {
         task::block_on(async {
+            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b100).await {
+                return reply.error(libc::EACCES);
+            }
+
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
@@ -219,6 +223,10 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
+            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+                return reply.error(libc::EACCES);
+            }
+
             // TODO: handle duplicates
 
             let kind = mode_to_filetype(mode).unwrap();
@@ -281,13 +289,17 @@ impl Filesystem for TagFileSystem<'_> {
 
     fn readdir(
         &mut self,
-        _req: &Request<'_>,
+        req: &Request<'_>,
         ino: u64,
         _fh: u64,
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
         task::block_on(async {
+            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b100).await {
+                return reply.error(libc::EACCES);
+            }
+
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
@@ -351,7 +363,10 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
-            // TODO: parent permissions, need impl mountpoint FileAttrs first (for if ino = 1)
+            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+                return reply.error(libc::EACCES);
+            }
+
             // TODO: handle duplicates
 
             let now = SystemTime::now();
@@ -436,14 +451,12 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
-    fn rmdir(
-        &mut self,
-        _req: &Request<'_>,
-        parent: u64,
-        name: &std::ffi::OsStr,
-        reply: ReplyEmpty,
-    ) {
+    fn rmdir(&mut self, req: &Request<'_>, parent: u64, name: &std::ffi::OsStr, reply: ReplyEmpty) {
         task::block_on(async {
+            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+                return reply.error(libc::EACCES);
+            }
+
             match  query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?").bind(parent as i64).bind(name.to_str().unwrap()).fetch_optional(self.pool).await.unwrap(){
                 Some(r)=>{
                     if let Err(e) = query("DELETE FROM file_attrs WHERE ino = ?")
@@ -463,12 +476,16 @@ impl Filesystem for TagFileSystem<'_> {
 
     fn unlink(
         &mut self,
-        _req: &Request<'_>,
+        req: &Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: ReplyEmpty,
     ) {
         task::block_on(async {
+            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+                return reply.error(libc::EACCES);
+            }
+
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
@@ -500,6 +517,10 @@ impl Filesystem for TagFileSystem<'_> {
                 .unwrap()
             {
                 Some(r) => {
+                    if !self.has_ino_pern(r.ino, req.uid(), req.gid(), 0b010).await {
+                        return reply.error(libc::EACCES);
+                    }
+
                     if let Err(e) = query("DELETE FROM file_attrs WHERE ino = ?")
                         .bind(r.ino as i64)
                         .execute(self.pool)
