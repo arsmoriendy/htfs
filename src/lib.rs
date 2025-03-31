@@ -595,4 +595,70 @@ impl Filesystem for TagFileSystem<'_> {
             reply.attr(&Duration::from_secs(1), &attr);
         })
     }
+
+    fn write(
+        &mut self,
+        req: &Request<'_>,
+        ino: u64,
+        _fh: u64,
+        offset: i64,
+        data: &[u8],
+        _write_flags: u32,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        reply: ReplyWrite,
+    ) {
+        task::block_on(async {
+            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b010).await {
+                return reply.error(libc::EACCES);
+            }
+
+            query("INSERT INTO file_contents VALUES ($4, $2) ON CONFLICT(ino) DO UPDATE SET content = CONCAT(SUBSTR(content, 1, $1), CONCAT($2, SUBSTR(content, $3))) WHERE ino = $4")
+                .bind(offset)
+                .bind(data)
+                .bind(data.len() as i64)
+                .bind(ino as i64)
+                .execute(self.pool)
+                .await.unwrap();
+
+            query("UPDATE file_attrs SET size = (SELECT LENGTH(content) FROM file_contents WHERE ino = $1) WHERE ino = $1")
+                .bind(ino as i64)
+                .execute(self.pool)
+                .await
+                .unwrap();
+
+            reply.written((data.len() * size_of_val(&data[0])) as u32);
+        });
+    }
+
+    fn read(
+        &mut self,
+        req: &Request<'_>,
+        ino: u64,
+        _fh: u64,
+        offset: i64,
+        size: u32,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        reply: ReplyData,
+    ) {
+        task::block_on(async {
+            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b100).await {
+                return reply.error(libc::EACCES);
+            }
+
+            let data = query_as::<_, (Box<[u8]>,)>(
+                "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
+            )
+            .bind(offset)
+            .bind(size)
+            .bind(ino as i64)
+            .fetch_one(self.pool)
+            .await
+            .unwrap()
+            .0;
+
+            reply.data(Box::leak(data));
+        });
+    }
 }
