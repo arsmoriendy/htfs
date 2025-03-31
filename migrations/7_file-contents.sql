@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS file_contents (
+  ino INTEGER PRIMARY KEY,
+  content BLOB,
+  FOREIGN KEY (ino) REFERENCES file_attrs(ino)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+);
