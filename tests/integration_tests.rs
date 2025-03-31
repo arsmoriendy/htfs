@@ -2,7 +2,7 @@
 mod integration_tests {
     use std::{
         fs::{create_dir, metadata, remove_file, File},
-        io::{self, Read},
+        io::{self, Read, Write},
         os::unix::fs::MetadataExt,
         path::PathBuf,
         str::FromStr,
@@ -23,7 +23,16 @@ mod integration_tests {
     impl Default for Setup {
         fn default() -> Self {
             let mount_path = PathBuf::from("mountpoint");
-            std::fs::create_dir(&mount_path).unwrap();
+            loop {
+                if let Err(e) = std::fs::create_dir(&mount_path) {
+                    if e.kind() == io::ErrorKind::AlreadyExists {
+                        continue;
+                    } else {
+                        panic!("{e}");
+                    }
+                };
+                break;
+            }
 
             let db_path = PathBuf::from("tfs_test.sqlite");
             File::create(&db_path).unwrap();
