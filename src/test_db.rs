@@ -41,6 +41,11 @@ mod test {
                 .await
                 .unwrap();
 
+            query("SELECT ino, content FROM file_contents")
+                .execute(pool.as_ref())
+                .await
+                .unwrap();
+
             pool.close().await;
         });
     }
