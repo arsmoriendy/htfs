@@ -620,27 +620,25 @@ impl Filesystem for TagFileSystem<'_> {
                     .await
                     .unwrap();
 
-            // padded data in case offset is larger than file size
-            let ndata = match cnt_len {
+            let pad: Option<&[u8]> = match cnt_len {
                 Some((l,)) => {
                     if offset > l {
-                        let mut pdata = vec![0; (offset - l).try_into().unwrap()];
-                        pdata.extend_from_slice(data);
-                        pdata.leak()
+                        Some(vec![0; (offset - l).try_into().unwrap()].leak())
                     } else {
-                        data
+                        None
                     }
                 }
-                None => data,
+                None => None,
             };
 
             // cast to BLOB because sqlite converts all CONCAT expressions to TEXT
             // https://stackoverflow.com/questions/55301281/update-query-to-append-zeroes-into-blob-field-with-sqlitestudio
-            query("INSERT INTO file_contents VALUES ($4, $2) ON CONFLICT(ino) DO UPDATE SET content = CAST(CONCAT(SUBSTR(content, 1, $1), CONCAT($2, SUBSTR(content, $3))) AS BLOB) WHERE ino = $4")
+            query("INSERT INTO file_contents VALUES ($4, CAST(CONCAT($5, $2) AS BLOB)) ON CONFLICT(ino) DO UPDATE SET content = CAST(CONCAT(SUBSTR(content, 1, $1), CONCAT(CONCAT($5, $2), SUBSTR(content, $3))) AS BLOB) WHERE ino = $4")
                 .bind(offset)
-                .bind(ndata)
+                .bind(data)
                 .bind(data.len() as i64 + 1 + offset)
                 .bind(ino as i64)
+                .bind(pad.unwrap_or(&[]))
                 .execute(self.pool)
                 .await.unwrap();
 
