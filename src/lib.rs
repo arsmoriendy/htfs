@@ -573,7 +573,17 @@ impl Filesystem for TagFileSystem<'_> {
                     None => return reply.error(libc::ENOENT),
                 };
 
-            attr.size = size.unwrap_or(attr.size);
+            attr.size = match size {
+                Some(s) => {
+                    query("UPDATE file_contents SET content = CAST(SUBSTR(content, 1, $1) AS BLOB) WHERE ino = $2")
+                        .bind(s as i64)
+                        .bind(ino as i64)
+                        .execute(self.pool)
+                        .await.unwrap();
+                    s
+                }
+                None => attr.size,
+            };
             attr.atime = atime.map_or(attr.atime, |tn| match tn {
                 TimeOrNow::Now => SystemTime::now(),
                 TimeOrNow::SpecificTime(t) => t,
