@@ -3,8 +3,8 @@ mod integration_tests {
     use std::{
         fs::{create_dir, metadata, remove_file, File},
         io::{self, Read, Write},
-        os::unix::fs::MetadataExt,
-        path::PathBuf,
+        os::unix::fs::{FileExt, MetadataExt},
+        path::{Path, PathBuf},
         str::FromStr,
     };
 
@@ -88,6 +88,43 @@ mod integration_tests {
         }
     }
 
+    fn crt_dummy_dir(parent: &Path, name: Option<&Path>) -> PathBuf {
+        let dir_path: PathBuf = [parent, name.unwrap_or(Path::new("foo"))].iter().collect();
+        create_dir(&dir_path).unwrap();
+        dir_path
+    }
+
+    fn crt_dummy_file(parent: &Path, name: Option<&Path>) -> (PathBuf, File) {
+        let path: PathBuf = [parent, name.unwrap_or(Path::new("bar"))].iter().collect();
+        let file = File::create_new(&path).unwrap();
+
+        (path, file)
+    }
+
+    struct Dummies {
+        dir_path: PathBuf,
+        file_path: PathBuf,
+        file: File,
+    }
+    fn crt_dummies(parent: &PathBuf) -> Dummies {
+        let dir_path = crt_dummy_dir(parent, None);
+        let file = crt_dummy_file(&dir_path, None);
+
+        Dummies {
+            dir_path,
+            file_path: file.0,
+            file: file.1,
+        }
+    }
+
+    /// Create dummy dir `foo` at `parent`, create file `bar` in it that is filled with `content`
+    /// or `lorem ipsum` by default
+    fn fill_dummy(parent: &PathBuf, content: Option<&[u8]>) -> Dummies {
+        let mut dum = crt_dummies(parent);
+        dum.file.write(content.unwrap_or(b"lorem ipsum")).unwrap();
+        dum
+    }
+
     #[ignore]
     #[test]
     fn mount_interactive() {
@@ -104,10 +141,7 @@ mod integration_tests {
             let stp = Setup::default();
 
             let dir_name = "foo";
-
-            let mut dir_path = stp.mount_path.clone();
-            dir_path.push(dir_name);
-            create_dir(&dir_path).unwrap();
+            let dir_path = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
 
             let dir_meta = metadata(&dir_path).unwrap();
             let tid = query_as::<_, (i64,)>("SELECT tid FROM associated_tags WHERE ino = ?")
