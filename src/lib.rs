@@ -613,9 +613,32 @@ impl Filesystem for TagFileSystem<'_> {
                 return reply.error(libc::EACCES);
             }
 
-            query("INSERT INTO file_contents VALUES ($4, $2) ON CONFLICT(ino) DO UPDATE SET content = CONCAT(SUBSTR(content, 1, $1), CONCAT($2, SUBSTR(content, $3))) WHERE ino = $4")
+            let cnt_len =
+                query_as::<_, (i64,)>("SELECT LENGTH(content) FROM file_contents WHERE ino = $1")
+                    .bind(ino as i64)
+                    .fetch_optional(self.pool)
+                    .await
+                    .unwrap();
+
+            // padded data in case offset is larger than file size
+            let ndata = match cnt_len {
+                Some((l,)) => {
+                    if offset > l {
+                        let mut pdata = vec![0; (offset - l).try_into().unwrap()];
+                        pdata.extend_from_slice(data);
+                        pdata.leak()
+                    } else {
+                        data
+                    }
+                }
+                None => data,
+            };
+
+            // cast to BLOB because sqlite converts all CONCAT expressions to TEXT
+            // https://stackoverflow.com/questions/55301281/update-query-to-append-zeroes-into-blob-field-with-sqlitestudio
+            query("INSERT INTO file_contents VALUES ($4, $2) ON CONFLICT(ino) DO UPDATE SET content = CAST(CONCAT(SUBSTR(content, 1, $1), CONCAT($2, SUBSTR(content, $3))) AS BLOB) WHERE ino = $4")
                 .bind(offset)
-                .bind(data)
+                .bind(ndata)
                 .bind(data.len() as i64 + 1 + offset)
                 .bind(ino as i64)
                 .execute(self.pool)
