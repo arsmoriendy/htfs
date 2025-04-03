@@ -627,7 +627,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .await
                 .unwrap();
 
-            reply.written((data.len() * size_of_val(&data[0])) as u32);
+            reply.written(data.len().try_into().unwrap());
         });
     }
 
