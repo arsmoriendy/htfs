@@ -7,7 +7,7 @@ use db_types::{
 };
 use fuser::*;
 use libc::c_int;
-use sqlx::{query, query_as, Error, Pool, QueryBuilder, Sqlite};
+use sqlx::{query, query_as, Pool, QueryBuilder, Sqlite};
 use std::time::{Duration, SystemTime};
 
 pub struct TagFileSystem<'a> {
@@ -15,57 +15,49 @@ pub struct TagFileSystem<'a> {
 }
 
 impl TagFileSystem<'_> {
-    async fn ins_attrs(&self, attr: &FileAttr) -> u64 {
-        bind_attrs!(query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ino"), attr)
+    async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, sqlx::Error> {
+        Ok(bind_attrs!(query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ino"), attr)
             .fetch_one(self.pool)
-            .await
-            .unwrap()
-            .0
+            .await?
+            .0)
     }
 
-    async fn upd_attrs(&self, ino: u64, attr: &FileAttr) {
+    async fn upd_attrs(&self, ino: u64, attr: &FileAttr) -> Result<(), sqlx::Error> {
         bind_attrs!(query("UPDATE file_attrs SET size = ?, blocks = ?, atime = ?, mtime = ?, ctime = ?, crtime = ?, kind = ?, perm = ?, nlink = ?, uid = ?, gid = ?, rdev = ?, blksize = ?, flags = ? WHERE ino = ?"), attr)
             .bind(ino as i64)
             .execute(self.pool)
-            .await
-            .unwrap();
+            .await?;
+        Ok(())
     }
 
-    async fn get_ass_tags(&self, ino: u64) -> Vec<u64> {
-        let ptags_res: Result<Vec<(u64,)>, Error> =
-            query_as("SELECT tid FROM associated_tags WHERE ino = ?")
+    async fn get_ass_tags(&self, ino: u64) -> Result<Vec<u64>, sqlx::Error> {
+        Ok(
+            query_as::<_, (u64,)>("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(ino as i64)
                 .fetch_all(self.pool)
-                .await;
-
-        match ptags_res {
-            Ok(p) => p.iter().map(|r| r.0).collect(),
-            Err(e) => panic!("{e}"),
-        }
+                .await?
+                .iter()
+                .map(|r| r.0)
+                .collect::<Vec<_>>(),
+        )
     }
 
-    async fn sync_mtime(&self, ino: u64) -> Result<(), Error> {
-        match query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
+    async fn sync_mtime(&self, ino: u64) -> Result<(), sqlx::Error> {
+        query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
             .bind(from_systime(SystemTime::now()) as i64)
             .bind(ino as i64)
             .execute(self.pool)
-            .await
-        {
-            Err(e) => Err(e),
-            Ok(_) => Ok(()),
-        }
+            .await?;
+        Ok(())
     }
 
-    async fn sync_atime(&self, ino: u64) -> Result<(), Error> {
-        match query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
+    async fn sync_atime(&self, ino: u64) -> Result<(), sqlx::Error> {
+        query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
             .bind(from_systime(SystemTime::now()) as i64)
             .bind(ino as i64)
             .execute(self.pool)
-            .await
-        {
-            Err(e) => Err(e),
-            Ok(_) => Ok(()),
-        }
+            .await?;
+        Ok(())
     }
 
     fn has_perm(&self, f_uid: u32, f_gid: u32, f_perm: u16, uid: u32, gid: u32, rwx: u16) -> bool {
@@ -97,14 +89,19 @@ impl TagFileSystem<'_> {
         return false;
     }
 
-    async fn has_ino_pern(&self, ino: u64, uid: u32, gid: u32, rwx: u16) -> bool {
+    async fn has_ino_pern(
+        &self,
+        ino: u64,
+        uid: u32,
+        gid: u32,
+        rwx: u16,
+    ) -> Result<bool, sqlx::Error> {
         let p_attrs = query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
             .bind(ino as i64)
             .fetch_one(self.pool)
-            .await
-            .unwrap();
+            .await?;
 
-        self.has_perm(p_attrs.uid, p_attrs.gid, p_attrs.perm, uid, gid, rwx)
+        Ok(self.has_perm(p_attrs.uid, p_attrs.gid, p_attrs.perm, uid, gid, rwx))
     }
 }
 
@@ -141,7 +138,8 @@ impl Filesystem for TagFileSystem<'_> {
                     blksize: 0,
                     flags: 0,
                 })
-                .await;
+                .await
+                .unwrap();
             };
         });
         return Ok(());
@@ -160,7 +158,7 @@ impl Filesystem for TagFileSystem<'_> {
             {
                 Ok(r) => reply.attr(&Duration::from_secs(1), &r.into()),
                 Err(e) => match e {
-                    Error::RowNotFound => reply.error(libc::ENOENT),
+                    sqlx::Error::RowNotFound => reply.error(libc::ENOENT),
                     _ => panic!("{e}"),
                 },
             };
@@ -175,14 +173,18 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b100).await {
+            if !self
+                .has_ino_pern(parent, req.uid(), req.gid(), 0b100)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = self.get_ass_tags(parent).await;
+            let ptags = self.get_ass_tags(parent).await.unwrap();
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -231,7 +233,11 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(parent, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
@@ -266,7 +272,7 @@ impl Filesystem for TagFileSystem<'_> {
                 flags: 0,
             };
 
-            f_attrs.ino = self.ins_attrs(&f_attrs).await;
+            f_attrs.ino = self.ins_attrs(&f_attrs).await.unwrap();
 
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(f_attrs.ino as i64)
@@ -276,7 +282,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .unwrap();
 
             // associate created directory with parent tags
-            for ptag in self.get_ass_tags(parent).await {
+            for ptag in self.get_ass_tags(parent).await.unwrap() {
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(ptag as i64)
                     .bind(f_attrs.ino as i64)
@@ -300,14 +306,18 @@ impl Filesystem for TagFileSystem<'_> {
         mut reply: ReplyDirectory,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b100).await {
+            if !self
+                .has_ino_pern(ino, req.uid(), req.gid(), 0b100)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = self.get_ass_tags(ino).await;
+            let ptags = self.get_ass_tags(ino).await.unwrap();
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -367,7 +377,11 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEntry,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(parent, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
@@ -395,7 +409,7 @@ impl Filesystem for TagFileSystem<'_> {
                 flags: 0,
             };
 
-            f_attrs.ino = self.ins_attrs(&f_attrs).await;
+            f_attrs.ino = self.ins_attrs(&f_attrs).await.unwrap();
 
             query("INSERT INTO file_names VALUES (?, ?)")
                 .bind(f_attrs.ino as i64)
@@ -440,7 +454,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .unwrap();
 
             // associate created directory with parent tags
-            for ptag in self.get_ass_tags(parent).await {
+            for ptag in self.get_ass_tags(parent).await.unwrap() {
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(ptag as i64)
                     .bind(f_attrs.ino as i64)
@@ -457,7 +471,11 @@ impl Filesystem for TagFileSystem<'_> {
 
     fn rmdir(&mut self, req: &Request<'_>, parent: u64, name: &std::ffi::OsStr, reply: ReplyEmpty) {
         task::block_on(async {
-            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(parent, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
@@ -486,14 +504,18 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyEmpty,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(parent, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(parent, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = self.get_ass_tags(parent).await;
+            let ptags = self.get_ass_tags(parent).await.unwrap();
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -521,7 +543,11 @@ impl Filesystem for TagFileSystem<'_> {
                 .unwrap()
             {
                 Some(r) => {
-                    if !self.has_ino_pern(r.ino, req.uid(), req.gid(), 0b010).await {
+                    if !self
+                        .has_ino_pern(r.ino, req.uid(), req.gid(), 0b010)
+                        .await
+                        .unwrap()
+                    {
                         return reply.error(libc::EACCES);
                     }
 
@@ -558,7 +584,11 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyAttr,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(ino, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
@@ -600,7 +630,7 @@ impl Filesystem for TagFileSystem<'_> {
             attr.uid = uid.unwrap_or(attr.uid);
             attr.gid = gid.unwrap_or(attr.gid);
 
-            self.upd_attrs(attr.ino, &attr).await;
+            self.upd_attrs(attr.ino, &attr).await.unwrap();
 
             reply.attr(&Duration::from_secs(1), &attr);
         })
@@ -619,7 +649,11 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyWrite,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b010).await {
+            if !self
+                .has_ino_pern(ino, req.uid(), req.gid(), 0b010)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
@@ -676,7 +710,11 @@ impl Filesystem for TagFileSystem<'_> {
         reply: ReplyData,
     ) {
         task::block_on(async {
-            if !self.has_ino_pern(ino, req.uid(), req.gid(), 0b100).await {
+            if !self
+                .has_ino_pern(ino, req.uid(), req.gid(), 0b100)
+                .await
+                .unwrap()
+            {
                 return reply.error(libc::EACCES);
             }
 
