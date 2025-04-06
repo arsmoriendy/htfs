@@ -6,6 +6,8 @@ mod integration_tests {
         os::unix::fs::{FileExt, MetadataExt},
         path::{Path, PathBuf},
         str::FromStr,
+        thread::sleep,
+        time::Duration,
     };
 
     use async_std::task;
@@ -200,16 +202,48 @@ mod integration_tests {
                 })
             };
 
+            let mut meta = file.metadata().unwrap();
+            let mut mtime = meta.mtime();
+
+            macro_rules! sleep {
+                () => {
+                    sleep(Duration::from_millis(1000));
+                };
+            }
+
+            macro_rules! snyc_meta {
+                () => {
+                    meta = file.metadata().unwrap();
+                };
+            }
+
+            macro_rules! assert_mtime {
+                () => {
+                    let prev_mtime = mtime;
+                    mtime = meta.mtime();
+                    assert!(mtime > prev_mtime);
+                };
+            }
+
+            sleep!();
             file.write_all_at(b"lorem ipsum", 0).unwrap();
+            snyc_meta!();
+            assert_mtime!();
             assert_eq!(b"lorem ipsum", db_content().as_slice());
-            assert_eq!(file.metadata().unwrap().size(), 11);
+            assert_eq!(meta.size(), 11);
 
+            sleep!();
             file.write_all_at(b"hello world", 6).unwrap();
+            snyc_meta!();
+            assert_mtime!();
             assert_eq!(b"lorem hello world", db_content().as_slice());
-            assert_eq!(file.metadata().unwrap().size(), 17);
+            assert_eq!(meta.size(), 17);
 
+            sleep!();
             let offset = 1_000_000;
             file.write_all_at(b"x", offset).unwrap();
+            snyc_meta!();
+            assert_mtime!();
             assert_eq!(
                 {
                     let mut v = Vec::from(b"lorem hello world");
@@ -219,7 +253,7 @@ mod integration_tests {
                 },
                 db_content()
             );
-            assert_eq!(file.metadata().unwrap().size(), offset + 1);
+            assert_eq!(meta.size(), offset + 1);
         })
     }
 
