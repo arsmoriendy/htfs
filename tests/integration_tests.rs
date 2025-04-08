@@ -273,10 +273,6 @@ mod integration_tests {
             // define variables to assert equal
             let expected_cnt = &full_cnt[..5];
 
-            let _cnt = read_to_string(dum.file_path).unwrap();
-            let cnt = _cnt.as_bytes();
-            let len: u64 = cnt.len().try_into().unwrap();
-
             let (db_cnt, db_cnt_len) = query_as::<_, (Vec<u8>, u64)>(
                 "SELECT content, LENGTH(content) FROM file_contents WHERE ino = $1",
             )
@@ -293,9 +289,20 @@ mod integration_tests {
                     .unwrap();
 
             assert_eq!(db_cnt_len, db_attr_size);
-            assert_eq!(db_cnt_len, len);
-            assert_eq!(db_cnt, cnt);
             assert_eq!(db_cnt, expected_cnt);
+        })
+    }
+
+    #[test]
+    fn read() {
+        task::block_on(async {
+            let stp = Setup::default();
+
+            let full_cnt = b"lorem ipsum";
+            let dum = fill_dummy(&stp.mount_path, Some(full_cnt));
+
+            let read_cnt = read_to_string(dum.file_path).unwrap();
+            assert_eq!(read_cnt.as_bytes(), full_cnt);
         })
     }
 }
