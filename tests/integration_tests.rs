@@ -121,7 +121,7 @@ mod integration_tests {
 
     /// Create dummy dir `foo` at `parent`, create file `bar` in it that is filled with `content`
     /// or `lorem ipsum` by default
-    fn fill_dummy(parent: &PathBuf, content: Option<&[u8]>) -> Dummies {
+    fn fill_dummies(parent: &PathBuf, content: Option<&[u8]>) -> Dummies {
         let mut dum = crt_dummies(parent);
         dum.file.write(content.unwrap_or(b"lorem ipsum")).unwrap();
         dum
@@ -188,7 +188,7 @@ mod integration_tests {
         task::block_on(async {
             let stp = Setup::default();
 
-            let dum = fill_dummy(&stp.mount_path, None);
+            let dum = fill_dummies(&stp.mount_path, None);
             let file = dum.file;
 
             let db_content = || {
@@ -263,7 +263,7 @@ mod integration_tests {
             let stp = Setup::default();
 
             let full_cnt = b"lorem ipsum";
-            let dum = fill_dummy(&stp.mount_path, Some(full_cnt));
+            let dum = fill_dummies(&stp.mount_path, Some(full_cnt));
             let file = dum.file;
             let ino: i64 = file.metadata().unwrap().ino().try_into().unwrap();
 
@@ -299,7 +299,7 @@ mod integration_tests {
             let stp = Setup::default();
 
             let full_cnt = b"lorem ipsum";
-            let dum = fill_dummy(&stp.mount_path, Some(full_cnt));
+            let dum = fill_dummies(&stp.mount_path, Some(full_cnt));
             let prev_atime = dum.file.metadata().unwrap().atime();
 
             sleep(Duration::from_millis(1000));
