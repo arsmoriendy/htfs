@@ -24,6 +24,8 @@ mod integration_tests {
 
     impl Default for Setup {
         fn default() -> Self {
+            tracing_subscriber::fmt::try_init().ok();
+
             let mount_path = PathBuf::from("mountpoint");
             loop {
                 if let Err(e) = std::fs::create_dir(&mount_path) {

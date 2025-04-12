@@ -10,6 +10,7 @@ use libc::c_int;
 use sqlx::{query, query_as, Pool, QueryBuilder, Sqlite};
 use std::time::{Duration, SystemTime};
 
+#[derive(Debug)]
 pub struct TagFileSystem<'a> {
     pub pool: &'a Pool<Sqlite>,
 }
@@ -106,6 +107,7 @@ impl TagFileSystem<'_> {
 }
 
 impl Filesystem for TagFileSystem<'_> {
+    #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         task::block_on(async {
             if let None = query("SELECT 1 FROM file_attrs WHERE ino = 1")
@@ -145,10 +147,12 @@ impl Filesystem for TagFileSystem<'_> {
         return Ok(());
     }
 
+    #[tracing::instrument]
     fn destroy(&mut self) {
         task::block_on(self.pool.close());
     }
 
+    #[tracing::instrument]
     fn getattr(&mut self, _req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
         task::block_on(async {
             match query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
@@ -165,6 +169,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn lookup(
         &mut self,
         req: &Request<'_>,
@@ -222,6 +227,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn mknod(
         &mut self,
         req: &Request<'_>,
@@ -246,7 +252,7 @@ impl Filesystem for TagFileSystem<'_> {
             let kind = mode_to_filetype(mode).unwrap();
 
             if kind != FileType::RegularFile {
-                eprintln!("tfs currently only supports regular files");
+                tracing::error!("tfs currently only supports regular files");
                 reply.error(libc::ENOSYS);
                 return;
             }
@@ -297,6 +303,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn readdir(
         &mut self,
         req: &Request<'_>,
@@ -367,6 +374,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn mkdir(
         &mut self,
         req: &Request<'_>,
@@ -469,6 +477,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn rmdir(&mut self, req: &Request<'_>, parent: u64, name: &std::ffi::OsStr, reply: ReplyEmpty) {
         task::block_on(async {
             if !self
@@ -496,6 +505,7 @@ impl Filesystem for TagFileSystem<'_> {
         })
     }
 
+    #[tracing::instrument]
     fn unlink(
         &mut self,
         req: &Request<'_>,
@@ -565,6 +575,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn setattr(
         &mut self,
         req: &Request<'_>,
@@ -636,6 +647,7 @@ impl Filesystem for TagFileSystem<'_> {
         })
     }
 
+    #[tracing::instrument]
     fn write(
         &mut self,
         req: &Request<'_>,
@@ -700,6 +712,7 @@ impl Filesystem for TagFileSystem<'_> {
         });
     }
 
+    #[tracing::instrument]
     fn read(
         &mut self,
         req: &Request<'_>,
