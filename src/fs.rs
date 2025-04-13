@@ -1,6 +1,6 @@
 use crate::{
     bind_attrs, bind_attrs_ino,
-    db_types::{
+    db_helpers::types::{
         from_filetype, from_systime, mode_to_filetype, to_filetype, FileAttrRow, ReadDirRow,
     },
     TagFileSystem,

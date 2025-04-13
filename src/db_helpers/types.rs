@@ -2,33 +2,6 @@ use fuser::{FileAttr, FileType};
 use sqlx::FromRow;
 use std::time::{Duration, SystemTime};
 
-#[macro_export]
-macro_rules! bind_attrs {
-    ($q: expr, $a: expr) => {
-        $q.bind($a.size as i64) // size INTEGER,
-            .bind($a.blocks as i64) // blocks INTEGER,
-            .bind(from_systime($a.atime) as i64) // atime INTEGER,
-            .bind(from_systime($a.mtime) as i64) // mtime INTEGER,
-            .bind(from_systime($a.ctime) as i64) // ctime INTEGER,
-            .bind(from_systime($a.crtime) as i64) // crtime INTEGER,
-            .bind(from_filetype($a.kind)) // kind INTEGER,
-            .bind($a.perm) // perm INTEGER,
-            .bind($a.nlink) // nlink INTEGER,
-            .bind($a.uid) // uid INTEGER,
-            .bind($a.gid) // gid INTEGER,
-            .bind($a.rdev) // rdev INTEGER,
-            .bind($a.blksize) // blksize INTEGER,
-            .bind($a.flags) // flags INTEGER,
-    };
-}
-
-#[macro_export]
-macro_rules! bind_attrs_ino {
-    ($q: expr, $a: expr) => {
-        bind_attrs!($q.bind($a.ino as i64), $a)
-    };
-}
-
 pub fn from_filetype(ft: FileType) -> u8 {
     match ft {
         FileType::NamedPipe => 0,
