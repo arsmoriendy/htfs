@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod test {
+    use async_std::task;
     use sqlx::{migrate, query, SqlitePool};
-
-    use crate::*;
 
     #[test]
     fn migrate() {
