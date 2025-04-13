@@ -23,6 +23,13 @@ macro_rules! bind_attrs {
     };
 }
 
+#[macro_export]
+macro_rules! bind_attrs_ino {
+    ($q: expr, $a: expr) => {
+        bind_attrs!($q.bind($a.ino as i64), $a)
+    };
+}
+
 pub fn from_filetype(ft: FileType) -> u8 {
     match ft {
         FileType::NamedPipe => 0,
