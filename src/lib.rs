@@ -140,41 +140,35 @@ impl Filesystem for TagFileSystem<'_> {
     #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         task::block_on(async {
-            if let None = query("SELECT 1 FROM file_attrs WHERE ino = 1")
-                .fetch_optional(self.pool)
-                .await
-                .unwrap()
-            {
-                self.ins_attrs(&FileAttr {
-                    ino: 0,
-                    nlink: 1,
-                    rdev: 0,
+            // create mountpoint attr if not exist
+            bind_attrs_ino!(query("INSERT OR IGNORE INTO file_attrs VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"), FileAttr {
+                ino: 1,
+                nlink: 1,
+                rdev: 0,
 
-                    // TODO: size related
-                    size: 0,
-                    blocks: 0,
+                // TODO: size related
+                size: 0,
+                blocks: 0,
 
-                    atime: SystemTime::now(),
-                    mtime: SystemTime::now(),
-                    ctime: SystemTime::now(),
-                    crtime: SystemTime::now(),
-                    kind: FileType::Directory,
+                atime: SystemTime::now(),
+                mtime: SystemTime::now(),
+                ctime: SystemTime::now(),
+                crtime: SystemTime::now(),
+                kind: FileType::Directory,
 
-                    // TODO: permission related, sync with original dir mayhaps?
-                    perm: 0o777,
+                // TODO: permission related, sync with original dir mayhaps?
+                perm: 0o777,
 
-                    uid: req.uid(),
-                    gid: req.gid(),
+                uid: req.uid(),
+                gid: req.gid(),
 
-                    // TODO: misc
-                    blksize: 0,
-                    flags: 0,
-                })
-                .await
-                .unwrap();
-            };
-        });
-        return Ok(());
+                // TODO: misc
+                blksize: 0,
+                flags: 0,
+            }).execute(self.pool).await.map_err(|_| EDB)?;
+
+            Ok(())
+        })
     }
 
     #[tracing::instrument]
