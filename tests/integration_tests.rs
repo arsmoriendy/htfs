@@ -15,6 +15,7 @@ mod integration_tests {
     use sqlx::{migrate, query, query_as, sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};
     use tfs::TagFileSystem;
 
+    const BASE_DIR: &str = env!("CARGO_MANIFEST_DIR");
     struct Setup {
         mount_path: PathBuf,
         db_path: PathBuf,
@@ -26,9 +27,7 @@ mod integration_tests {
         fn default() -> Self {
             tracing_subscriber::fmt::try_init().ok();
 
-            let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-            let mount_path: PathBuf = [&base_dir, &"mountpoint".into()].iter().collect();
+            let mount_path: PathBuf = [BASE_DIR, "mountpoint"].iter().collect();
             loop {
                 if let Err(e) = std::fs::create_dir(&mount_path) {
                     if e.kind() == io::ErrorKind::AlreadyExists {
@@ -40,7 +39,7 @@ mod integration_tests {
                 break;
             }
 
-            let db_path: PathBuf = [&base_dir, &"tfs_test.sqlite".into()].iter().collect();
+            let db_path: PathBuf = [BASE_DIR, "tfs_test.sqlite"].iter().collect();
             File::create(&db_path).unwrap();
 
             let pool = task::block_on(async {
