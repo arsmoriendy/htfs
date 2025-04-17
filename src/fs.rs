@@ -242,7 +242,7 @@ impl Filesystem for TagFileSystem<'_> {
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = self.get_ass_tags(ino).await.unwrap();
+            let ptags = handle_db_err!(self.get_ass_tags(ino).await, reply);
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -284,8 +284,8 @@ impl Filesystem for TagFileSystem<'_> {
                             break;
                         };
                     }
+                    handle_db_err!(self.sync_atime(ino).await, reply);
                     reply.ok();
-                    self.sync_atime(ino).await.unwrap();
                 }
                 Err(e) => panic!("{e}"),
             };
