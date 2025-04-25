@@ -456,26 +456,25 @@ impl Filesystem for TagFileSystem<'_> {
                 .push(" AND name = ")
                 .push_bind(name.to_str());
 
-            match query_builder
-                .build_query_as::<FileAttrRow>()
-                .fetch_optional(self.pool)
-                .await
-                .unwrap()
-            {
-                Some(r) => {
-                    auth_perm!(self, r.ino, req, reply, 0b010);
+            let f_attrs = handle_db_err!(
+                query_builder
+                    .build_query_as::<FileAttrRow>()
+                    .fetch_one(self.pool)
+                    .await,
+                reply
+            );
 
-                    if let Err(e) = query("DELETE FROM file_attrs WHERE ino = ?")
-                        .bind(r.ino as i64)
-                        .execute(self.pool)
-                        .await
-                    {
-                        panic!("{e}");
-                    };
-                    reply.ok();
-                }
-                None => reply.error(libc::ENOENT),
-            };
+            auth_perm!(self, f_attrs.ino, req, reply, 0b010);
+
+            handle_db_err!(
+                query("DELETE FROM file_attrs WHERE ino = ?")
+                    .bind(f_attrs.ino as i64)
+                    .execute(self.pool)
+                    .await,
+                reply
+            );
+
+            reply.ok();
         });
     }
 
