@@ -616,18 +616,20 @@ impl Filesystem for TagFileSystem<'_> {
         task::block_on(async {
             auth_perm!(self, ino, req, reply, 0b100);
 
-            let data = query_as::<_, (Box<[u8]>,)>(
-                "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
+            let data = handle_db_err!(
+                query_as::<_, (Box<[u8]>,)>(
+                    "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
+                )
+                .bind(offset)
+                .bind(size)
+                .bind(ino as i64)
+                .fetch_one(self.pool)
+                .await,
+                reply
             )
-            .bind(offset)
-            .bind(size)
-            .bind(ino as i64)
-            .fetch_one(self.pool)
-            .await
-            .unwrap()
             .0;
 
-            self.sync_atime(ino).await.unwrap();
+            handle_db_err!(self.sync_atime(ino).await, reply);
             reply.data(Box::leak(data));
         });
     }
