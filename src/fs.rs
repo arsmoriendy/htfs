@@ -84,8 +84,10 @@ impl Filesystem for TagFileSystem<'_> {
     }
 
     #[tracing::instrument]
-    fn getattr(&mut self, _req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
+    fn getattr(&mut self, req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
         task::block_on(async {
+            auth_perm!(self, ino, req, reply, 0b100);
+
             match query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
                 .bind(ino as i64)
                 .fetch_one(self.pool)
