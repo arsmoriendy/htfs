@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 // libc error code map for database errors
 const EDB: c_int = libc::EIO;
 
-macro_rules! handle_db_err {
+macro_rules! handle_sqlx_err {
     ($e: expr, $reply: expr) => {
         match $e {
             Ok(v) => v,
@@ -35,7 +35,7 @@ macro_rules! handle_db_err {
 
 macro_rules! auth_perm {
     ($self: expr, $ino: expr, $req: expr, $reply: expr, $rwx: expr) => {
-        let has_perm = handle_db_err!($self.req_has_ino_perm($ino, $req, $rwx).await, $reply);
+        let has_perm = handle_sqlx_err!($self.req_has_ino_perm($ino, $req, $rwx).await, $reply);
         if !has_perm {
             $reply.error(libc::EACCES);
             return;
@@ -116,7 +116,7 @@ impl Filesystem for TagFileSystem<'_> {
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = handle_db_err!(self.get_ass_tags(parent).await, reply);
+            let ptags = handle_sqlx_err!(self.get_ass_tags(parent).await, reply);
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -139,7 +139,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .push(" AND name = ")
                 .push_bind(name.to_str());
 
-            match handle_db_err!(
+            match handle_sqlx_err!(
                 query_builder
                     .build_query_as::<ReadDirRow>()
                     .fetch_optional(self.pool)
@@ -200,9 +200,9 @@ impl Filesystem for TagFileSystem<'_> {
                 flags: 0,
             };
 
-            f_attrs.ino = handle_db_err!(self.ins_attrs(&f_attrs).await, reply);
+            f_attrs.ino = handle_sqlx_err!(self.ins_attrs(&f_attrs).await, reply);
 
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("INSERT INTO file_names VALUES (?, ?)")
                     .bind(f_attrs.ino as i64)
                     .bind(name.to_str())
@@ -212,8 +212,8 @@ impl Filesystem for TagFileSystem<'_> {
             );
 
             // associate created directory with parent tags
-            for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
-                handle_db_err!(
+            for ptag in handle_sqlx_err!(self.get_ass_tags(parent).await, reply) {
+                handle_sqlx_err!(
                     query("INSERT INTO associated_tags VALUES (?, ?)")
                         .bind(ptag as i64)
                         .bind(f_attrs.ino as i64)
@@ -223,7 +223,7 @@ impl Filesystem for TagFileSystem<'_> {
                 );
             }
 
-            handle_db_err!(self.sync_mtime(parent).await, reply);
+            handle_sqlx_err!(self.sync_mtime(parent).await, reply);
 
             reply.entry(&Duration::from_secs(1), &f_attrs, 0);
         });
@@ -244,7 +244,7 @@ impl Filesystem for TagFileSystem<'_> {
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = handle_db_err!(self.get_ass_tags(ino).await, reply);
+            let ptags = handle_sqlx_err!(self.get_ass_tags(ino).await, reply);
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -286,7 +286,7 @@ impl Filesystem for TagFileSystem<'_> {
                             break;
                         };
                     }
-                    handle_db_err!(self.sync_atime(ino).await, reply);
+                    handle_sqlx_err!(self.sync_atime(ino).await, reply);
                     reply.ok();
                 }
                 Err(e) => panic!("{e}"),
@@ -331,9 +331,9 @@ impl Filesystem for TagFileSystem<'_> {
                 flags: 0,
             };
 
-            f_attrs.ino = handle_db_err!(self.ins_attrs(&f_attrs).await, reply);
+            f_attrs.ino = handle_sqlx_err!(self.ins_attrs(&f_attrs).await, reply);
 
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("INSERT INTO file_names VALUES (?, ?)")
                     .bind(f_attrs.ino as i64)
                     .bind(name.to_str())
@@ -342,7 +342,7 @@ impl Filesystem for TagFileSystem<'_> {
                 reply
             );
 
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("INSERT INTO dir_contents VALUES (?, ?)")
                     .bind(parent as i64)
                     .bind(f_attrs.ino as i64)
@@ -352,7 +352,7 @@ impl Filesystem for TagFileSystem<'_> {
             );
 
             // create tag if doesn't exists
-            let tid = match handle_db_err!(
+            let tid = match handle_sqlx_err!(
                 query_as::<_, (u64,)>("SELECT tid FROM tags WHERE name = ?")
                     .bind(name.to_str())
                     .fetch_optional(self.pool)
@@ -361,7 +361,7 @@ impl Filesystem for TagFileSystem<'_> {
             ) {
                 Some(tid_row) => tid_row.0,
                 None => {
-                    handle_db_err!(
+                    handle_sqlx_err!(
                         query_as::<_, (u64,)>("INSERT INTO tags(name) VALUES (?) RETURNING tid")
                             .bind(name.to_str())
                             .fetch_one(self.pool)
@@ -373,7 +373,7 @@ impl Filesystem for TagFileSystem<'_> {
             };
 
             // associate created directory with the tid above
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("INSERT INTO associated_tags VALUES (?, ?)")
                     .bind(tid as i64)
                     .bind(f_attrs.ino as i64)
@@ -383,8 +383,8 @@ impl Filesystem for TagFileSystem<'_> {
             );
 
             // associate created directory with parent tags
-            for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
-                handle_db_err!(
+            for ptag in handle_sqlx_err!(self.get_ass_tags(parent).await, reply) {
+                handle_sqlx_err!(
                     query("INSERT INTO associated_tags VALUES (?, ?)")
                         .bind(ptag as i64)
                         .bind(f_attrs.ino as i64)
@@ -394,7 +394,7 @@ impl Filesystem for TagFileSystem<'_> {
                 );
             }
 
-            handle_db_err!(self.sync_mtime(parent).await, reply);
+            handle_sqlx_err!(self.sync_mtime(parent).await, reply);
 
             reply.entry(&Duration::from_secs(1), &f_attrs, 1);
         });
@@ -405,13 +405,13 @@ impl Filesystem for TagFileSystem<'_> {
         task::block_on(async {
             auth_perm!(self, parent, req, reply, 0b010);
 
-            let (ino,) = handle_db_err!(query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?")
+            let (ino,) = handle_sqlx_err!(query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?")
                 .bind(parent as i64)
                 .bind(name.to_str().unwrap())
                 .fetch_one(self.pool)
                 .await, reply);
 
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("DELETE FROM file_attrs WHERE ino = ?")
                     .bind(ino)
                     .execute(self.pool)
@@ -437,7 +437,7 @@ impl Filesystem for TagFileSystem<'_> {
             let mut query_builder =
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
-            let ptags = handle_db_err!(self.get_ass_tags(parent).await, reply);
+            let ptags = handle_sqlx_err!(self.get_ass_tags(parent).await, reply);
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
@@ -458,7 +458,7 @@ impl Filesystem for TagFileSystem<'_> {
                 .push(" AND name = ")
                 .push_bind(name.to_str());
 
-            let f_attrs = handle_db_err!(
+            let f_attrs = handle_sqlx_err!(
                 query_builder
                     .build_query_as::<FileAttrRow>()
                     .fetch_one(self.pool)
@@ -468,7 +468,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             auth_perm!(self, f_attrs.ino, req, reply, 0b010);
 
-            handle_db_err!(
+            handle_sqlx_err!(
                 query("DELETE FROM file_attrs WHERE ino = ?")
                     .bind(f_attrs.ino as i64)
                     .execute(self.pool)
@@ -502,7 +502,7 @@ impl Filesystem for TagFileSystem<'_> {
         task::block_on(async {
             auth_perm!(self, ino, req, reply, 0b010);
 
-            let mut attr: FileAttr = handle_db_err!(
+            let mut attr: FileAttr = handle_sqlx_err!(
                 query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = $1")
                     .bind(ino as i64)
                     .fetch_one(self.pool)
@@ -513,7 +513,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             attr.size = match size {
                 Some(s) => {
-                    handle_db_err!(query("UPDATE file_contents SET content = CAST(SUBSTR(content, 1, $1) AS BLOB) WHERE ino = $2")
+                    handle_sqlx_err!(query("UPDATE file_contents SET content = CAST(SUBSTR(content, 1, $1) AS BLOB) WHERE ino = $2")
                         .bind(s as i64)
                         .bind(ino as i64)
                         .execute(self.pool)
@@ -538,7 +538,7 @@ impl Filesystem for TagFileSystem<'_> {
             attr.uid = uid.unwrap_or(attr.uid);
             attr.gid = gid.unwrap_or(attr.gid);
 
-            handle_db_err!(self.upd_attrs(attr.ino, &attr).await, reply);
+            handle_sqlx_err!(self.upd_attrs(attr.ino, &attr).await, reply);
 
             reply.attr(&Duration::from_secs(1), &attr);
         })
@@ -562,7 +562,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             let dat_len = i64::try_from(data.len()).unwrap();
 
-            let cnt_len = handle_db_err!(
+            let cnt_len = handle_sqlx_err!(
                 query_as::<_, (i64,)>("SELECT LENGTH(content) FROM file_contents WHERE ino = $1")
                     .bind(ino as i64)
                     .fetch_optional(self.pool)
@@ -583,7 +583,7 @@ impl Filesystem for TagFileSystem<'_> {
 
             // cast to BLOB because sqlite converts all concat (||) expressions to TEXT
             // https://stackoverflow.com/questions/55301281/update-query-to-append-zeroes-into-blob-field-with-sqlitestudio
-            handle_db_err!(query("INSERT INTO file_contents VALUES ($4, CAST(ZEROBLOB($5) || $2 AS BLOB)) ON CONFLICT(ino) DO UPDATE SET content = CAST(SUBSTR(content, 1, $1) || ZEROBLOB($5) || $2 || SUBSTR(content, $3) AS BLOB) WHERE ino = $4")
+            handle_sqlx_err!(query("INSERT INTO file_contents VALUES ($4, CAST(ZEROBLOB($5) || $2 AS BLOB)) ON CONFLICT(ino) DO UPDATE SET content = CAST(SUBSTR(content, 1, $1) || ZEROBLOB($5) || $2 || SUBSTR(content, $3) AS BLOB) WHERE ino = $4")
                 .bind(offset)
                 .bind(data)
                 .bind(offset + 1 + dat_len )
@@ -592,12 +592,12 @@ impl Filesystem for TagFileSystem<'_> {
                 .execute(self.pool)
                 .await, reply);
 
-            handle_db_err!(query("UPDATE file_attrs SET size = (SELECT LENGTH(content) FROM file_contents WHERE ino = $1) WHERE ino = $1")
+            handle_sqlx_err!(query("UPDATE file_attrs SET size = (SELECT LENGTH(content) FROM file_contents WHERE ino = $1) WHERE ino = $1")
                 .bind(ino as i64)
                 .execute(self.pool)
                 .await, reply);
 
-            handle_db_err!(self.sync_mtime(ino).await, reply);
+            handle_sqlx_err!(self.sync_mtime(ino).await, reply);
 
             reply.written(dat_len.try_into().unwrap());
         });
@@ -618,7 +618,7 @@ impl Filesystem for TagFileSystem<'_> {
         task::block_on(async {
             auth_perm!(self, ino, req, reply, 0b100);
 
-            let data = handle_db_err!(
+            let data = handle_sqlx_err!(
                 query_as::<_, (Box<[u8]>,)>(
                     "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
                 )
@@ -631,7 +631,7 @@ impl Filesystem for TagFileSystem<'_> {
             )
             .0;
 
-            handle_db_err!(self.sync_atime(ino).await, reply);
+            handle_sqlx_err!(self.sync_atime(ino).await, reply);
             reply.data(Box::leak(data));
         });
     }
