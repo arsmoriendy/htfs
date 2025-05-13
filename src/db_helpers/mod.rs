@@ -1,51 +1,48 @@
 pub mod types;
 
-use crate::{bind_attrs, TagFileSystem};
+use crate::TagFileSystem;
 use fuser::{FileAttr, Request};
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, Sqlite};
 use std::time::SystemTime;
-use types::{from_filetype, from_systime, FileAttrRow};
+use types::{from_filetype, from_systime, Bindable, ConvError, DBError, FileAttrRow};
 
-#[macro_export]
-macro_rules! bind_attrs {
-    ($q: expr, $a: expr) => {
-        $q.bind($a.size as i64) // size INTEGER,
-            .bind($a.blocks as i64) // blocks INTEGER,
-            .bind(from_systime($a.atime) as i64) // atime INTEGER,
-            .bind(from_systime($a.mtime) as i64) // mtime INTEGER,
-            .bind(from_systime($a.ctime) as i64) // ctime INTEGER,
-            .bind(from_systime($a.crtime) as i64) // crtime INTEGER,
-            .bind(from_filetype($a.kind)) // kind INTEGER,
-            .bind($a.perm) // perm INTEGER,
-            .bind($a.nlink) // nlink INTEGER,
-            .bind($a.uid) // uid INTEGER,
-            .bind($a.gid) // gid INTEGER,
-            .bind($a.rdev) // rdev INTEGER,
-            .bind($a.blksize) // blksize INTEGER,
-            .bind($a.flags) // flags INTEGER,
-    };
-}
-
-#[macro_export]
-macro_rules! bind_attrs_ino {
-    ($q: expr, $a: expr) => {
-        bind_attrs!($q.bind($a.ino as i64), $a)
-    };
+pub fn try_bind_attrs<'q, Q, B>(b: B, a: &FileAttr) -> Result<Q, ConvError>
+where
+    B: Bindable<'q, Sqlite, Q>,
+{
+    Ok(
+        b.gbind(a.ino as i64) // ino INTEGER
+            .gbind(a.size as i64) // size INTEGER,
+            .gbind(a.blocks as i64) // blocks INTEGER,
+            .gbind(from_systime(a.atime)? as i64) // atime INTEGER,
+            .gbind(from_systime(a.mtime)? as i64) // mtime INTEGER,
+            .gbind(from_systime(a.ctime)? as i64) // ctime INTEGER,
+            .gbind(from_systime(a.crtime)? as i64) // crtime INTEGER,
+            .gbind(from_filetype(a.kind)) // kind INTEGER,
+            .gbind(a.perm) // perm INTEGER,
+            .gbind(a.nlink) // nlink INTEGER,
+            .gbind(a.uid) // uid INTEGER,
+            .gbind(a.gid) // gid INTEGER,
+            .gbind(a.rdev) // rdev INTEGER,
+            .gbind(a.blksize) // blksize INTEGER,
+            .gbind(a.flags)
+            .inner(), // flags INTEGER,
+    )
 }
 
 impl TagFileSystem<'_> {
-    pub async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, sqlx::Error> {
-        Ok(bind_attrs!(query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ino"), attr)
+    pub async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
+        let q = query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino");
+        Ok(try_bind_attrs(q, attr)?
+            .inner()
             .fetch_one(self.pool)
             .await?
             .0)
     }
 
-    pub async fn upd_attrs(&self, ino: u64, attr: &FileAttr) -> Result<(), sqlx::Error> {
-        bind_attrs!(query("UPDATE file_attrs SET size = ?, blocks = ?, atime = ?, mtime = ?, ctime = ?, crtime = ?, kind = ?, perm = ?, nlink = ?, uid = ?, gid = ?, rdev = ?, blksize = ?, flags = ? WHERE ino = ?"), attr)
-            .bind(ino as i64)
-            .execute(self.pool)
-            .await?;
+    pub async fn upd_attrs(&self, attr: &FileAttr) -> Result<(), DBError> {
+        let q = query("UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, blksize = $14, flags = $15 WHERE ino = $1");
+        try_bind_attrs(q, attr)?.execute(self.pool).await?;
         Ok(())
     }
 
@@ -61,18 +58,18 @@ impl TagFileSystem<'_> {
         )
     }
 
-    pub async fn sync_mtime(&self, ino: u64) -> Result<(), sqlx::Error> {
+    pub async fn sync_mtime(&self, ino: u64) -> Result<(), DBError> {
         query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
-            .bind(from_systime(SystemTime::now()) as i64)
+            .bind(from_systime(SystemTime::now())? as i64)
             .bind(ino as i64)
             .execute(self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn sync_atime(&self, ino: u64) -> Result<(), sqlx::Error> {
+    pub async fn sync_atime(&self, ino: u64) -> Result<(), DBError> {
         query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
-            .bind(from_systime(SystemTime::now()) as i64)
+            .bind(from_systime(SystemTime::now())? as i64)
             .bind(ino as i64)
             .execute(self.pool)
             .await?;

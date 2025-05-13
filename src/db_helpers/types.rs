@@ -1,6 +1,100 @@
 use fuser::{FileAttr, FileType};
-use sqlx::FromRow;
-use std::time::{Duration, SystemTime};
+use libc::c_int;
+use sqlx::{
+    query::{Query, QueryAs},
+    Database, Encode, FromRow, Type,
+};
+use std::time::{Duration, SystemTime, SystemTimeError};
+
+pub trait Bindable<'q, DB: Database, Q> {
+    /// Bind for a general `Bindable` type
+    fn gbind<T>(self, value: T) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>;
+
+    fn inner(self) -> Q;
+}
+
+impl<'q, DB> Bindable<'q, DB, Query<'q, DB, <DB as Database>::Arguments<'q>>>
+    for Query<'q, DB, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+{
+    fn gbind<T>(self, value: T) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>,
+    {
+        self.bind(value)
+    }
+
+    fn inner(self) -> Query<'q, DB, <DB as Database>::Arguments<'q>> {
+        self
+    }
+}
+
+impl<'q, DB, A> Bindable<'q, DB, QueryAs<'q, DB, A, <DB as Database>::Arguments<'q>>>
+    for QueryAs<'q, DB, A, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+{
+    fn gbind<T>(self, value: T) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>,
+    {
+        self.bind(value)
+    }
+
+    fn inner(self) -> QueryAs<'q, DB, A, <DB as Database>::Arguments<'q>> {
+        self
+    }
+}
+
+pub enum DBError {
+    SQLX(sqlx::Error),
+    Conv(ConvError),
+}
+
+/// libc error code map for database errors
+pub const EDB: c_int = libc::EIO;
+
+impl DBError {
+    /// Maps to a tuple of libc error and a string
+    pub fn map_db_err(&self) -> (c_int, String) {
+        match &self {
+            DBError::SQLX(e) => (
+                match e {
+                    sqlx::Error::RowNotFound => libc::ENOENT,
+                    _ => EDB,
+                },
+                e.to_string(),
+            ),
+            DBError::Conv(e) => (
+                match e {
+                    _ => EDB,
+                },
+                // TODO: impl display for ConvError
+                "Conversion error".to_string(),
+            ),
+        }
+    }
+}
+
+impl From<ConvError> for DBError {
+    fn from(value: ConvError) -> Self {
+        DBError::Conv(value)
+    }
+}
+
+impl From<sqlx::Error> for DBError {
+    fn from(value: sqlx::Error) -> Self {
+        DBError::SQLX(value)
+    }
+}
+pub enum ConvError {
+    U8ToFiletype,
+    ModeToFiletype,
+    SystemTimeToU64(SystemTimeError),
+}
 
 pub fn from_filetype(ft: FileType) -> u8 {
     match ft {
@@ -14,7 +108,7 @@ pub fn from_filetype(ft: FileType) -> u8 {
     }
 }
 
-pub fn to_filetype(n: u8) -> Result<FileType, ()> {
+pub fn to_filetype(n: u8) -> Result<FileType, ConvError> {
     Ok(match n.into() {
         0 => FileType::NamedPipe,
         1 => FileType::CharDevice,
@@ -23,11 +117,11 @@ pub fn to_filetype(n: u8) -> Result<FileType, ()> {
         4 => FileType::RegularFile,
         5 => FileType::Symlink,
         6 => FileType::Socket,
-        _ => return Err(()),
+        _ => return Err(ConvError::U8ToFiletype),
     })
 }
 
-pub fn mode_to_filetype(mut mode: u32) -> Result<FileType, ()> {
+pub fn mode_to_filetype(mut mode: u32) -> Result<FileType, ConvError> {
     mode &= libc::S_IFMT;
     Ok(match mode {
         libc::S_IFSOCK => FileType::Socket,
@@ -36,12 +130,15 @@ pub fn mode_to_filetype(mut mode: u32) -> Result<FileType, ()> {
         libc::S_IFBLK => FileType::BlockDevice,
         libc::S_IFDIR => FileType::Directory,
         libc::S_IFCHR => FileType::CharDevice,
-        _ => return Err(()),
+        _ => return Err(ConvError::ModeToFiletype),
     })
 }
 
-pub fn from_systime(st: SystemTime) -> u64 {
-    st.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+pub fn from_systime(st: SystemTime) -> Result<u64, ConvError> {
+    Ok(st
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|e| ConvError::SystemTimeToU64(e))?
+        .as_secs())
 }
 
 pub fn to_systime(secs: u64) -> SystemTime {
@@ -67,25 +164,27 @@ pub struct FileAttrRow {
     pub flags: u32,
 }
 
-impl Into<FileAttr> for FileAttrRow {
-    fn into(self) -> FileAttr {
-        FileAttr {
-            ino: self.ino,
-            size: self.size,
-            blocks: self.blocks,
-            atime: to_systime(self.atime),
-            mtime: to_systime(self.mtime),
-            ctime: to_systime(self.ctime),
-            crtime: to_systime(self.crtime),
-            kind: to_filetype(self.kind).unwrap(),
-            perm: self.perm,
-            nlink: self.nlink,
-            uid: self.uid,
-            gid: self.gid,
-            rdev: self.rdev,
-            blksize: self.blksize,
-            flags: self.flags,
-        }
+impl TryFrom<FileAttrRow> for FileAttr {
+    type Error = ConvError;
+
+    fn try_from(value: FileAttrRow) -> Result<Self, Self::Error> {
+        Ok(FileAttr {
+            ino: value.ino,
+            size: value.size,
+            blocks: value.blocks,
+            atime: to_systime(value.atime),
+            mtime: to_systime(value.mtime),
+            ctime: to_systime(value.ctime),
+            crtime: to_systime(value.crtime),
+            kind: to_filetype(value.kind)?,
+            perm: value.perm,
+            nlink: value.nlink,
+            uid: value.uid,
+            gid: value.gid,
+            rdev: value.rdev,
+            blksize: value.blksize,
+            flags: value.flags,
+        })
     }
 }
 
