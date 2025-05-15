@@ -9,7 +9,29 @@ use async_std::task;
 use fuser::*;
 use libc::c_int;
 use sqlx::{query, query_as, QueryBuilder, Sqlite};
-use std::time::{Duration, SystemTime};
+use std::{
+    num::TryFromIntError,
+    time::{Duration, SystemTime},
+};
+
+fn handle_from_int_err<T>(expr: Result<T, TryFromIntError>) -> Result<T, c_int> {
+    expr.map_err(|e| {
+        tracing::error!("{e}");
+        libc::ERANGE
+    })
+}
+
+macro_rules! handle_from_int_err {
+    ($e: expr, $reply: expr) => {
+        match handle_from_int_err($e) {
+            Ok(v) => v,
+            Err(e) => {
+                $reply.error(e);
+                return;
+            }
+        }
+    };
+}
 
 fn handle_db_err<T, E>(expr: Result<T, E>) -> Result<T, c_int>
 where
