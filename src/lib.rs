@@ -1,3 +1,5 @@
+#[macro_use]
+mod macros;
 mod db_helpers;
 mod fs;
 mod test_db;

@@ -1,5 +1,3 @@
-#[macro_use]
-mod macros;
 use crate::{
     db_helpers::{
         try_bind_attrs,
