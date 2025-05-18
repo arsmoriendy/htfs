@@ -95,7 +95,7 @@ impl Filesystem for TagFileSystem<'_> {
             for ptag in ptags.iter().enumerate() {
                 query_builder
                     .push("SELECT ino FROM associated_tags WHERE tid = ")
-                    .push_bind(*ptag.1 as i64);
+                    .push_bind(to_i64!(*ptag.1, reply));
                 if ptag.0 != ptags.len() - 1 {
                     query_builder.push(" AND ino IN (");
                 }
