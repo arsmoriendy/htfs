@@ -9,7 +9,7 @@ use db_helpers::{
 };
 use fuser::{FileAttr, Request};
 use libc::c_int;
-use sqlx::{query, query_as, Database, Pool, Sqlite};
+use sqlx::{query, query_as, query_scalar, Database, Pool, Sqlite};
 use std::{num::TryFromIntError, time::SystemTime};
 
 #[derive(Debug)]
@@ -19,12 +19,11 @@ pub struct TagFileSystem<'a, DB: Database> {
 
 impl TagFileSystem<'_, Sqlite> {
     async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
-        let q = query_as::<_, (u64,)>( "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino");
+        let q = query_scalar::<_, u64>( "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino");
         Ok(try_bind_attrs(q, attr)?
             .inner()
             .fetch_one(self.pool)
-            .await?
-            .0)
+            .await?)
     }
 
     async fn upd_attrs(&self, attr: &FileAttr) -> Result<(), DBError> {
@@ -35,13 +34,10 @@ impl TagFileSystem<'_, Sqlite> {
 
     async fn get_ass_tags(&self, ino: u64) -> Result<Vec<u64>, DBError> {
         Ok(
-            query_as::<_, (u64,)>("SELECT tid FROM associated_tags WHERE ino = ?")
+            query_scalar::<_, u64>("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(i64::try_from(ino)?)
                 .fetch_all(self.pool)
-                .await?
-                .iter()
-                .map(|r| r.0)
-                .collect::<Vec<_>>(),
+                .await?,
         )
     }
 

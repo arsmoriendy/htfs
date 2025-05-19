@@ -1,7 +1,7 @@
 use fuser::{FileAttr, FileType};
 use libc::c_int;
 use sqlx::{
-    query::{Query, QueryAs},
+    query::{Query, QueryAs, QueryScalar},
     Database, Encode, FromRow, Type,
 };
 use std::{
@@ -48,6 +48,23 @@ where
     }
 
     fn inner(self) -> QueryAs<'q, DB, A, <DB as Database>::Arguments<'q>> {
+        self
+    }
+}
+
+impl<'q, DB, A> Bindable<'q, DB, QueryScalar<'q, DB, A, <DB as Database>::Arguments<'q>>>
+    for QueryScalar<'q, DB, A, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+{
+    fn gbind<T>(self, value: T) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>,
+    {
+        self.bind(value)
+    }
+
+    fn inner(self) -> QueryScalar<'q, DB, A, <DB as Database>::Arguments<'q>> {
         self
     }
 }

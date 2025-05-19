@@ -8,7 +8,7 @@ use crate::{
 use async_std::task;
 use fuser::*;
 use libc::c_int;
-use sqlx::{query, query_as, QueryBuilder, Sqlite};
+use sqlx::{query, query_as, query_scalar, QueryBuilder, Sqlite};
 use std::{
     i64,
     time::{Duration, SystemTime},
@@ -319,22 +319,21 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
 
             // create tag if doesn't exists
             let tid = match handle_db_err!(
-                query_as::<_, (u64,)>("SELECT tid FROM tags WHERE name = ?")
+                query_scalar::<_, u64>("SELECT tid FROM tags WHERE name = ?")
                     .bind(name.to_str())
                     .fetch_optional(self.pool)
                     .await,
                 reply
             ) {
-                Some(tid_row) => tid_row.0,
+                Some(tid_row) => tid_row,
                 None => {
                     handle_db_err!(
-                        query_as::<_, (u64,)>("INSERT INTO tags(name) VALUES (?) RETURNING tid")
+                        query_scalar::<_, u64>("INSERT INTO tags(name) VALUES (?) RETURNING tid")
                             .bind(name.to_str())
                             .fetch_one(self.pool)
                             .await,
                         reply
                     )
-                    .0
                 }
             };
 
@@ -371,7 +370,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
         task::block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
-            let (ino,) = handle_db_err!(query_as::<_,(i64,)>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?")
+            let ino = handle_db_err!(query_scalar::<_,i64>("SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?")
                 .bind(to_i64!(parent,reply))
                 .bind(name.to_str().unwrap())
                 .fetch_one(self.pool)
@@ -530,7 +529,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
             let dat_len = i64::try_from(data.len()).unwrap();
 
             let cnt_len = handle_db_err!(
-                query_as::<_, (i64,)>("SELECT LENGTH(content) FROM file_contents WHERE ino = $1")
+                query_scalar::<_, i64>("SELECT LENGTH(content) FROM file_contents WHERE ino = $1")
                     .bind(to_i64!(ino, reply))
                     .fetch_optional(self.pool)
                     .await,
@@ -538,7 +537,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
             );
 
             let pad_len: Option<i64> = match cnt_len {
-                Some((l,)) => {
+                Some(l) => {
                     if offset > l {
                         Some(offset - l)
                     } else {
@@ -586,7 +585,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
             handle_auth_perm!(self, ino, req, reply, 0b100);
 
             let data = handle_db_err!(
-                query_as::<_, (Box<[u8]>,)>(
+                query_scalar::<_, Box<[u8]>>(
                     "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
                 )
                 .bind(offset)
@@ -595,8 +594,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                 .fetch_one(self.pool)
                 .await,
                 reply
-            )
-            .0;
+            );
 
             handle_db_err!(self.sync_atime(ino).await, reply);
             reply.data(Box::leak(data));
