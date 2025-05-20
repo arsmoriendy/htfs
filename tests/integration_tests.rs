@@ -12,7 +12,10 @@ mod integration_tests {
 
     use async_std::task;
     use fuser::{spawn_mount2, BackgroundSession};
-    use sqlx::{migrate, query, query_as, sqlite::SqliteConnectOptions, Pool, Sqlite, SqlitePool};
+    use sqlx::{
+        migrate, query, query_as, query_scalar, sqlite::SqliteConnectOptions, Pool, Sqlite,
+        SqlitePool,
+    };
     use tfs::TagFileSystem;
 
     const BASE_DIR: &str = env!("CARGO_MANIFEST_DIR");
@@ -149,35 +152,32 @@ mod integration_tests {
             let dir_path = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
 
             let dir_meta = metadata(&dir_path).unwrap();
-            let tid = query_as::<_, (i64,)>("SELECT tid FROM associated_tags WHERE ino = ?")
+            let tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(dir_meta.ino() as i64)
                 .fetch_one(stp.pool)
                 .await
-                .unwrap()
-                .0;
+                .unwrap();
 
             assert!(dir_meta.is_dir());
             assert_eq!(dir_meta.uid(), unsafe { libc::geteuid() });
             assert_eq!(dir_meta.gid(), unsafe { libc::getegid() });
             // assert dir name
             assert!(
-                query_as::<_, (String,)>("SELECT name FROM file_names WHERE ino = ?")
+                query_scalar::<_, String>("SELECT name FROM file_names WHERE ino = ?")
                     .bind(dir_meta.ino() as i64)
                     .fetch_one(stp.pool)
                     .await
                     .unwrap()
-                    .0
                     .eq(dir_name)
             );
             // assert tag name
             assert!(
-                query_as::<_, (String,)>("SELECT  name FROM tags WHERE tid = ? AND name = ?",)
+                query_scalar::<_, String>("SELECT  name FROM tags WHERE tid = ? AND name = ?",)
                     .bind(tid)
                     .bind(dir_name)
                     .fetch_one(stp.pool)
                     .await
                     .unwrap()
-                    .0
                     .eq(dir_name)
             );
         })
@@ -196,12 +196,11 @@ mod integration_tests {
 
             let db_content = || {
                 task::block_on(async {
-                    query_as::<_, (Vec<u8>,)>("SELECT content FROM file_contents WHERE ino = $1")
+                    query_scalar::<_, Vec<u8>>("SELECT content FROM file_contents WHERE ino = $1")
                         .bind(file.metadata().unwrap().ino() as i64)
                         .fetch_one(stp.pool)
                         .await
                         .unwrap()
-                        .0
                 })
             };
 
@@ -284,12 +283,11 @@ mod integration_tests {
             .await
             .unwrap();
 
-            let (db_attr_size,) =
-                query_as::<_, (u64,)>("SELECT size FROM file_attrs WHERE ino = $1")
-                    .bind(ino)
-                    .fetch_one(stp.pool)
-                    .await
-                    .unwrap();
+            let db_attr_size = query_scalar::<_, u64>("SELECT size FROM file_attrs WHERE ino = $1")
+                .bind(ino)
+                .fetch_one(stp.pool)
+                .await
+                .unwrap();
 
             assert_eq!(db_cnt_len, db_attr_size);
             assert_eq!(db_cnt, expected_cnt);
