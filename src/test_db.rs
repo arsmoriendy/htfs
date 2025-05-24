@@ -57,7 +57,7 @@ mod test {
 
         let mut qb = QueryBuilder::<Sqlite>::new("");
 
-        chain_tagged_inos(&mut qb, tags)
+        chain_tagged_inos(&mut qb, &tags)
             .map_err(|_| "failed binding tags")
             .unwrap();
 

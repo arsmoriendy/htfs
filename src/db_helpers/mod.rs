@@ -29,7 +29,7 @@ where
 }
 
 /// Chain `qb` with a `SELECT` query of inodes that has been tagged with all of `tags`
-pub fn chain_tagged_inos(qb: &mut QueryBuilder<Sqlite>, tags: Vec<u64>) -> Result<(), DBError> {
+pub fn chain_tagged_inos(qb: &mut QueryBuilder<Sqlite>, tags: &Vec<u64>) -> Result<(), DBError> {
     for (i, t) in tags.iter().enumerate() {
         qb.push("SELECT ino FROM associated_tags WHERE tid = ")
             .push_bind(i64::try_from(*t)?);

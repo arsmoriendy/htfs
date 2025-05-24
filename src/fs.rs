@@ -92,7 +92,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
             let ptags = handle_db_err!(self.get_ass_tags(parent).await, reply);
-            handle_db_err!(chain_tagged_inos(&mut query_builder, ptags), reply);
+            handle_db_err!(chain_tagged_inos(&mut query_builder, &ptags), reply);
 
             query_builder
                 .push(
@@ -206,7 +206,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
             let ptags = handle_db_err!(self.get_ass_tags(ino).await, reply);
-            handle_db_err!(chain_tagged_inos(&mut query_builder, ptags), reply);
+            handle_db_err!(chain_tagged_inos(&mut query_builder, &ptags), reply);
 
             query_builder
                 .push(
@@ -383,7 +383,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                 QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
             let ptags = handle_db_err!(self.get_ass_tags(parent).await, reply);
-            handle_db_err!(chain_tagged_inos(&mut query_builder, ptags), reply);
+            handle_db_err!(chain_tagged_inos(&mut query_builder, &ptags), reply);
 
             query_builder
                 .push(") OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ")
