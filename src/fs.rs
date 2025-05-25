@@ -99,9 +99,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                     ") AND kind != 3 OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ",
                 )
                 .push_bind(to_i64!(parent, reply))
-                .push(")) AND ino != ")
-                .push_bind(to_i64!(parent, reply))
-                .push(" AND name = ")
+                .push(")) AND name = ")
                 .push_bind(name.to_str());
 
             let row = handle_db_err!(
@@ -213,9 +211,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                     ") AND kind != 3 OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ",
                 )
                 .push_bind(to_i64!(ino, reply))
-                .push(")) AND ino != ")
-                .push_bind(to_i64!(ino, reply))
-                .push(" ORDER BY ino LIMIT -1 OFFSET ")
+                .push(")) ORDER BY ino LIMIT -1 OFFSET ")
                 .push_bind(offset);
 
             let rows = handle_db_err!(
@@ -388,9 +384,7 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
             query_builder
                 .push(") OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ")
                 .push_bind(to_i64!(parent, reply))
-                .push(")) AND ino != ")
-                .push_bind(to_i64!(parent, reply))
-                .push(" AND name = ")
+                .push(")) AND name = ")
                 .push_bind(name.to_str());
 
             let f_attrs = handle_db_err!(
