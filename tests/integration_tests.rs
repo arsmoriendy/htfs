@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod integration_tests {
     use std::{
-        fs::{self, create_dir, metadata, read_to_string, remove_file, File},
+        fs::{self, File},
         io::{self, Read, Write},
         os::unix::fs::{FileExt, MetadataExt},
         path::{Path, PathBuf},
@@ -92,13 +92,13 @@ mod integration_tests {
         fn drop(&mut self) {
             self.bg_sess.take().unwrap().join();
             std::fs::remove_dir(&self.mount_path).unwrap();
-            remove_file(&self.db_path).unwrap();
+            fs::remove_file(&self.db_path).unwrap();
         }
     }
 
     fn crt_dummy_dir(parent: &Path, name: Option<&Path>) -> PathBuf {
         let dir_path: PathBuf = [parent, name.unwrap_or(Path::new("foo"))].iter().collect();
-        create_dir(&dir_path).unwrap();
+        fs::create_dir(&dir_path).unwrap();
         dir_path
     }
 
@@ -151,7 +151,7 @@ mod integration_tests {
             let dir_name = "foo";
             let dir_path = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
 
-            let dir_meta = metadata(&dir_path).unwrap();
+            let dir_meta = fs::metadata(&dir_path).unwrap();
             let tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(dir_meta.ino() as i64)
                 .fetch_one(stp.pool)
@@ -304,7 +304,7 @@ mod integration_tests {
             let prev_atime = dum.file.metadata().unwrap().atime();
 
             sleep(Duration::from_millis(1000));
-            let read_cnt = read_to_string(dum.file_path).unwrap();
+            let read_cnt = fs::read_to_string(dum.file_path).unwrap();
             let atime = dum.file.metadata().unwrap().atime();
             assert_eq!(read_cnt.as_bytes(), full_cnt);
             assert!(atime > prev_atime);
