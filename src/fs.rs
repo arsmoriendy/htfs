@@ -652,13 +652,28 @@ impl Filesystem for TagFileSystem<'_, Sqlite> {
                         reply
                     );
 
-                    // associate directory with newparent's tags
                     let new_tags = handle_db_err!(self.get_ass_tags(newparent).await, reply);
-                    for new_tid in new_tags {
+
+                    // associate children with newparent's tags
+                    for child_ino in &children {
+                        for new_tid in &new_tags {
+                            handle_db_err!(
+                                query("INSERT INTO associated_tags (ino, tid) VALUES ($1, $2)")
+                                    .bind(to_i64!(*child_ino, reply))
+                                    .bind(to_i64!(*new_tid, reply))
+                                    .execute(self.pool)
+                                    .await,
+                                reply
+                            );
+                        }
+                    }
+
+                    // associate directory with newparent's tags
+                    for new_tid in &new_tags {
                         handle_db_err!(
                             query("INSERT INTO associated_tags (ino, tid) VALUES ($1, $2)")
                                 .bind(to_i64!(ino, reply))
-                                .bind(to_i64!(new_tid, reply))
+                                .bind(to_i64!(*new_tid, reply))
                                 .execute(self.pool)
                                 .await,
                             reply
