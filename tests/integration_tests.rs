@@ -107,10 +107,12 @@ mod integration_tests {
         }
     }
 
-    fn crt_dummy_dir(parent: &Path, name: Option<&Path>) -> PathBuf {
+    fn crt_dummy_dir(parent: &Path, name: Option<&Path>) -> (PathBuf, File) {
         let dir_path: PathBuf = [parent, name.unwrap_or(Path::new("foo"))].iter().collect();
         fs::create_dir(&dir_path).unwrap();
-        dir_path
+        let dir_file = File::open(&dir_path).unwrap();
+
+        (dir_path, dir_file)
     }
 
     fn crt_dummy_file(parent: &Path, name: Option<&Path>) -> (PathBuf, File) {
@@ -122,17 +124,19 @@ mod integration_tests {
 
     struct Dummies {
         dir_path: PathBuf,
+        dir: File,
         file_path: PathBuf,
         file: File,
     }
     fn crt_dummies(parent: &PathBuf) -> Dummies {
-        let dir_path = crt_dummy_dir(parent, None);
-        let file = crt_dummy_file(&dir_path, None);
+        let (dir_path, dir) = crt_dummy_dir(parent, None);
+        let (file_path, file) = crt_dummy_file(&dir_path, None);
 
         Dummies {
+            dir,
             dir_path,
-            file_path: file.0,
-            file: file.1,
+            file_path,
+            file,
         }
     }
 
@@ -160,9 +164,9 @@ mod integration_tests {
             let stp = Setup::default();
 
             let dir_name = "foo";
-            let dir_path = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
+            let (_, dir_file) = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
+            let dir_meta = dir_file.metadata().unwrap();
 
-            let dir_meta = fs::metadata(&dir_path).unwrap();
             let tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
                 .bind(dir_meta.ino() as i64)
                 .fetch_one(stp.pool)
@@ -345,8 +349,8 @@ mod integration_tests {
         task::block_on(async {
             let stp = Setup::default();
 
-            let dir1_path = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir1")));
-            let dir2_path = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir2")));
+            let (dir1_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir1")));
+            let (dir2_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir2")));
 
             let (child_path, child) = crt_dummy_file(&dir1_path, Some(Path::new("child")));
             let child_ino = child.metadata().unwrap().ino();
@@ -373,14 +377,11 @@ mod integration_tests {
         task::block_on(async {
             let stp = Setup::default();
 
-            let dir1_path = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir1")));
-            let dir2_path = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir2")));
-            let inner_dir_path = crt_dummy_dir(&dir1_path, Some(Path::new("inner_dir")));
-            let inner_dir_ino = File::open(&inner_dir_path)
-                .unwrap()
-                .metadata()
-                .unwrap()
-                .ino();
+            let (dir1_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir1")));
+            let (dir2_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir2")));
+            let (inner_dir_path, inner_dir_file) =
+                crt_dummy_dir(&dir1_path, Some(Path::new("inner_dir")));
+            let inner_dir_ino = inner_dir_file.metadata().unwrap().ino();
 
             let (child_path, child) = crt_dummy_file(&inner_dir_path, Some(Path::new("child")));
             let child_ino = child.metadata().unwrap().ino();
