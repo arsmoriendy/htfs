@@ -14,6 +14,8 @@ impl Filesystem for TagFileSystem<Sqlite> {
     #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         self.rt.block_on(async {
+            migrate!().run(&self.pool).await.unwrap();
+
             // create mountpoint attr if not exist
             let q = handle_db_err(try_bind_attrs(
                 query("INSERT OR IGNORE INTO file_attrs VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"),
