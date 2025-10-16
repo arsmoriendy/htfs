@@ -393,13 +393,13 @@ mod integration_tests {
     }
 
     #[test]
-    async fn rename_dir() {
+    async fn rename_tagged_dir() {
         let stp = Setup::default().await;
 
-        let (dir1_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir1")));
-        let (dir2_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("dir2")));
+        let (dir1_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("#dir1")));
+        let (dir2_path, _) = crt_dummy_dir(&stp.mount_path, Some(Path::new("#dir2")));
         let (inner_dir_path, inner_dir_file) =
-            crt_dummy_dir(&dir1_path, Some(Path::new("inner_dir")));
+            crt_dummy_dir(&dir1_path, Some(Path::new("#inner_dir")));
         let inner_dir_ino = inner_dir_file.metadata().unwrap().ino();
 
         let (child_path, child) = crt_dummy_file(&inner_dir_path, Some(Path::new("child")));
