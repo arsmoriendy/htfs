@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod integration_tests {
-    use fuser::{spawn_mount2, BackgroundSession};
+    use fuser::{BackgroundSession, spawn_mount2};
     use sqlx::{
-        migrate, query, query_as, query_scalar, sqlite::SqliteConnectOptions, Pool, Sqlite,
-        SqlitePool,
+        Pool, Sqlite, SqlitePool, migrate, query, query_as, query_scalar,
+        sqlite::SqliteConnectOptions,
     };
     use std::{
-        fs::{self, create_dir, remove_file, File},
+        ffi::OsString,
+        fs::{self, File, create_dir, remove_file},
         io::{self, Read, Write},
         os::unix::fs::{FileExt, MetadataExt},
         path::{Path, PathBuf},
@@ -74,6 +75,7 @@ mod integration_tests {
                         .enable_time()
                         .build()
                         .unwrap(),
+                    tag_prefix: OsString::from("#"),
                 },
                 &mount_path,
                 &[],
@@ -170,10 +172,10 @@ mod integration_tests {
     }
 
     #[test]
-    async fn mkdir() {
+    async fn mkdir_tagged() {
         let stp = Setup::default().await;
 
-        let dir_name = "foo";
+        let dir_name = "#foo";
         let (_, dir_file) = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
         let dir_meta = dir_file.metadata().unwrap();
 
@@ -205,6 +207,35 @@ mod integration_tests {
                 .unwrap()
                 .eq(dir_name)
         );
+    }
+
+    #[test]
+    async fn mkdir_untagged() {
+        let stp = Setup::default().await;
+
+        let dir_name = "foo";
+        let (_, dir_file) = crt_dummy_dir(&stp.mount_path, Some(Path::new(dir_name)));
+        let dir_meta = dir_file.metadata().unwrap();
+
+        let tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
+            .bind(dir_meta.ino() as i64)
+            .fetch_optional(&stp.pool)
+            .await
+            .unwrap();
+
+        assert!(dir_meta.is_dir());
+        assert_eq!(dir_meta.uid(), unsafe { libc::geteuid() });
+        assert_eq!(dir_meta.gid(), unsafe { libc::getegid() });
+        // assert dir name
+        assert!(
+            query_scalar::<_, String>("SELECT name FROM file_names WHERE ino = ?")
+                .bind(dir_meta.ino() as i64)
+                .fetch_one(&stp.pool)
+                .await
+                .unwrap()
+                .eq(dir_name)
+        );
+        assert!(tid == None);
     }
 
     #[test]

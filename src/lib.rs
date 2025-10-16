@@ -5,23 +5,31 @@ mod fs;
 mod test_db;
 use db_helpers::{
     try_bind_attrs,
-    types::{from_systime, Bindable, DBError, FileAttrRow},
+    types::{Bindable, DBError, FileAttrRow, from_systime},
 };
 use fuser::{FileAttr, Request};
 use libc::c_int;
-use sqlx::{query, query_as, query_scalar, Database, Pool, Sqlite};
-use std::{num::TryFromIntError, time::SystemTime};
+use sqlx::{Database, Pool, Sqlite, query, query_as, query_scalar};
+use std::{
+    ffi::{OsStr, OsString},
+    num::TryFromIntError,
+    os::unix::ffi::OsStrExt,
+    time::SystemTime,
+};
 use tokio::runtime::Runtime;
 
 #[derive(Debug)]
 pub struct TagFileSystem<DB: Database> {
     pub pool: Pool<DB>,
     pub rt: Runtime,
+    pub tag_prefix: OsString,
 }
 
 impl TagFileSystem<Sqlite> {
     async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
-        let q = query_scalar::<_, u64>( "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino");
+        let q = query_scalar::<_, u64>(
+            "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino",
+        );
         Ok(try_bind_attrs(q, attr)?
             .inner()
             .fetch_one(&self.pool)
@@ -29,7 +37,9 @@ impl TagFileSystem<Sqlite> {
     }
 
     async fn upd_attrs(&self, attr: &FileAttr) -> Result<(), DBError> {
-        let q = query("UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, blksize = $14, flags = $15 WHERE ino = $1");
+        let q = query(
+            "UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, blksize = $14, flags = $15 WHERE ino = $1",
+        );
         try_bind_attrs(q, attr)?.execute(&self.pool).await?;
         Ok(())
     }
@@ -84,6 +94,14 @@ impl TagFileSystem<Sqlite> {
             gid,
             rwx,
         ))
+    }
+
+    fn is_prefixed(&self, filename: &OsStr) -> bool {
+        let prefix_position = filename.as_bytes().get(0..self.tag_prefix.len());
+        match prefix_position {
+            Some(oss) => oss == self.tag_prefix.as_bytes(),
+            None => false,
+        }
     }
 }
 

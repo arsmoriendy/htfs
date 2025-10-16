@@ -1,14 +1,18 @@
 use crate::{
+    TagFileSystem,
     db_helpers::{
         chain_tagged_inos, try_bind_attrs,
-        types::{mode_to_filetype, to_filetype, FileAttrRow, ReadDirRow},
+        types::{FileAttrRow, ReadDirRow, mode_to_filetype, to_filetype},
     },
-    handle_db_err, handle_from_int_err, TagFileSystem,
+    handle_db_err, handle_from_int_err,
 };
 use fuser::*;
 use libc::c_int;
-use sqlx::{migrate, query, query_as, query_scalar, QueryBuilder, Sqlite};
-use std::time::{Duration, SystemTime};
+use sqlx::{QueryBuilder, Sqlite, migrate, query, query_as, query_scalar};
+use std::{
+    os::unix::ffi::OsStrExt,
+    time::{Duration, SystemTime},
+};
 
 impl Filesystem for TagFileSystem<Sqlite> {
     #[tracing::instrument]
@@ -78,6 +82,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         });
     }
 
+    // TODO: prefix
     #[tracing::instrument]
     fn lookup(
         &mut self,
@@ -115,6 +120,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         });
     }
 
+    // TODO: prefix
     #[tracing::instrument]
     fn mknod(
         &mut self,
@@ -189,6 +195,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         });
     }
 
+    // TODO: prefix
     #[tracing::instrument]
     fn readdir(
         &mut self,
@@ -237,6 +244,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         });
     }
 
+    // TODO: prefix
     #[tracing::instrument]
     fn mkdir(
         &mut self,
@@ -294,46 +302,50 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 reply
             );
 
-            // create tag if doesn't exists
-            let tid = match handle_db_err!(
-                query_scalar::<_, u64>("SELECT tid FROM tags WHERE name = ?")
-                    .bind(name.to_str())
-                    .fetch_optional(&self.pool)
-                    .await,
-                reply
-            ) {
-                Some(tid_row) => tid_row,
-                None => {
-                    handle_db_err!(
-                        query_scalar::<_, u64>("INSERT INTO tags(name) VALUES (?) RETURNING tid")
+            if self.is_prefixed(name) {
+                // create tag if doesn't exists
+                let tid = match handle_db_err!(
+                    query_scalar::<_, u64>("SELECT tid FROM tags WHERE name = ?")
+                        .bind(name.to_str())
+                        .fetch_optional(&self.pool)
+                        .await,
+                    reply
+                ) {
+                    Some(tid_row) => tid_row,
+                    None => {
+                        handle_db_err!(
+                            query_scalar::<_, u64>(
+                                "INSERT INTO tags(name) VALUES (?) RETURNING tid"
+                            )
                             .bind(name.to_str())
                             .fetch_one(&self.pool)
                             .await,
-                        reply
-                    )
-                }
-            };
+                            reply
+                        )
+                    }
+                };
 
-            // associate created directory with the tid above
-            handle_db_err!(
-                query("INSERT INTO associated_tags VALUES (?, ?)")
-                    .bind(to_i64!(tid, reply))
-                    .bind(to_i64!(f_attrs.ino, reply))
-                    .execute(&self.pool)
-                    .await,
-                reply
-            );
-
-            // associate created directory with parent tags
-            for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
+                // associate created directory with the tid above
                 handle_db_err!(
                     query("INSERT INTO associated_tags VALUES (?, ?)")
-                        .bind(to_i64!(ptag, reply))
+                        .bind(to_i64!(tid, reply))
                         .bind(to_i64!(f_attrs.ino, reply))
                         .execute(&self.pool)
                         .await,
                     reply
                 );
+
+                // associate created directory with parent tags
+                for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
+                    handle_db_err!(
+                        query("INSERT INTO associated_tags VALUES (?, ?)")
+                            .bind(to_i64!(ptag, reply))
+                            .bind(to_i64!(f_attrs.ino, reply))
+                            .execute(&self.pool)
+                            .await,
+                        reply
+                    );
+                }
             }
 
             handle_db_err!(self.sync_mtime(parent).await, reply);
