@@ -299,7 +299,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 reply
             );
 
-            if self.is_prefixed(name) {
+            if self.is_prefixed(name.to_str().unwrap()) {
                 // create tag if doesn't exists
                 let tid = match handle_db_err!(
                     query_scalar::<_, u64>("SELECT tid FROM tags WHERE name = ?")

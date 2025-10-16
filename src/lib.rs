@@ -91,7 +91,7 @@ impl TagFileSystem<Sqlite> {
         ))
     }
 
-    fn is_prefixed(&self, filename: &OsStr) -> bool {
+    fn is_prefixed(&self, filename: &str) -> bool {
         let prefix_position = filename.as_bytes().get(0..self.tag_prefix.len());
         match prefix_position {
             Some(oss) => oss == self.tag_prefix.as_bytes(),
