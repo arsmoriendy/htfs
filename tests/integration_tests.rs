@@ -480,7 +480,7 @@ mod integration_tests {
         let file_ino = file.metadata().unwrap().ino();
         let db_file_ino = query_scalar::<_, i64>("SELECT ino FROM file_attrs WHERE ino = ?")
             .bind(file_ino as i64)
-            .fetch_all(&stp.pool)
+            .fetch_one(&stp.pool)
             .await
             .unwrap();
         let dir_tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
@@ -494,8 +494,7 @@ mod integration_tests {
             .await
             .unwrap();
 
-        assert!(db_file_ino.len() == 1);
-        assert!(db_file_ino[0] == file_ino as i64);
+        assert!(db_file_ino == file_ino as i64);
         assert!(dir_tid == file_tid);
     }
 
@@ -507,7 +506,7 @@ mod integration_tests {
         let file_ino = file.metadata().unwrap().ino();
         let db_file_ino = query_scalar::<_, i64>("SELECT ino FROM file_attrs WHERE ino = ?")
             .bind(file_ino as i64)
-            .fetch_all(&stp.pool)
+            .fetch_one(&stp.pool)
             .await
             .unwrap();
         let file_tid = query_scalar::<_, i64>("SELECT tid FROM associated_tags WHERE ino = ?")
@@ -516,8 +515,7 @@ mod integration_tests {
             .await
             .unwrap();
 
-        assert!(db_file_ino.len() == 1);
-        assert!(db_file_ino[0] == file_ino as i64);
+        assert!(db_file_ino == file_ino as i64);
         assert!(file_tid.is_none());
     }
 }
