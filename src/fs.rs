@@ -174,11 +174,30 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 reply
             );
 
-            // associate created directory with parent tags
-            for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
+            let parent_name = handle_db_err!(
+                query_scalar::<_, String>("SELECT name FROM file_names WHERE ino = ?")
+                    .bind(to_i64!(parent, reply))
+                    .fetch_one(&self.pool)
+                    .await,
+                reply
+            );
+
+            if self.is_prefixed(parent_name.as_str()) {
+                // associate created directory with parent tags
+                for ptag in handle_db_err!(self.get_ass_tags(parent).await, reply) {
+                    handle_db_err!(
+                        query("INSERT INTO associated_tags VALUES (?, ?)")
+                            .bind(to_i64!(ptag, reply))
+                            .bind(to_i64!(f_attrs.ino, reply))
+                            .execute(&self.pool)
+                            .await,
+                        reply
+                    );
+                }
+            } else {
                 handle_db_err!(
-                    query("INSERT INTO associated_tags VALUES (?, ?)")
-                        .bind(to_i64!(ptag, reply))
+                    query("INSERT INTO dir_contents (dir_ino, cnt_ino) VALUES (?, ?)")
+                        .bind(to_i64!(parent, reply))
                         .bind(to_i64!(f_attrs.ino, reply))
                         .execute(&self.pool)
                         .await,
