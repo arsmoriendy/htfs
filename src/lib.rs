@@ -23,7 +23,8 @@ pub struct TagFileSystem<DB: Database> {
 impl TagFileSystem<Sqlite> {
     async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
         let q = query_scalar::<_, u64>(
-            "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING ino",
+            "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, \
+             $13, $14, $15) RETURNING ino",
         );
         Ok(try_bind_attrs(q, attr)?
             .inner()
@@ -33,7 +34,9 @@ impl TagFileSystem<Sqlite> {
 
     async fn upd_attrs(&self, attr: &FileAttr) -> Result<(), DBError> {
         let q = query(
-            "UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, blksize = $14, flags = $15 WHERE ino = $1",
+            "UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, \
+             crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, \
+             blksize = $14, flags = $15 WHERE ino = $1",
         );
         try_bind_attrs(q, attr)?.execute(&self.pool).await?;
         Ok(())
