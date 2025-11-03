@@ -437,6 +437,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         self.rt.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
+            // TODO: handle untagged dir inside tagged dir
             let ino = handle_db_err!(
                 query_scalar::<_, i64>(
                     "SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = \
@@ -449,17 +450,31 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 reply
             );
 
-            handle_db_err!(
-                query("DELETE FROM file_attrs WHERE ino = ?")
+            // error if not empty
+            let is_empty = handle_db_err!(
+                query("SELECT TRUE FROM dir_contents WHERE dir_ino = ? LIMIT 1")
                     .bind(ino)
-                    .execute(&self.pool)
+                    .fetch_optional(&self.pool)
                     .await,
                 reply
-            );
+            )
+            .is_none();
+            if !is_empty {
+                reply.error(libc::ENOTEMPTY);
+                return;
+            }
 
             if self.is_prefixed(name.to_str().unwrap()) {
-                // get children
                 let tags = handle_db_err!(self.get_ass_tags(ino.try_into().unwrap()).await, reply);
+                let tid: u64 = handle_db_err!(
+                    query_scalar("SELECT tid FROM tags WHERE name = ?")
+                        .bind(name.to_str().unwrap())
+                        .fetch_one(&self.pool)
+                        .await,
+                    reply
+                );
+
+                // get children
                 let mut query_builder =
                     QueryBuilder::<Sqlite>::new("SELECT ino FROM file_attrs WHERE ino IN (");
                 handle_db_err!(chain_tagged_inos(&mut query_builder, &tags), reply);
@@ -477,27 +492,23 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 // delete children association
                 for child_ino in children {
                     handle_db_err!(
-                        query("DELETE FROM associated_tags WHERE ino = $1")
+                        query("DELETE FROM associated_tags WHERE ino = $1 AND tid = ?")
                             .bind(to_i64!(child_ino, reply))
+                            .bind(to_i64!(tid, reply))
                             .execute(&self.pool)
                             .await,
                         reply
                     );
                 }
-            } else {
-                // error if not empty
-                let is_empty: bool = handle_db_err!(
-                    query_scalar("SELECT COUNT(*) FROM dir_contents WHERE dir_ino = ?")
-                        .bind(ino)
-                        .fetch_one(&self.pool)
-                        .await,
-                    reply
-                );
-                if !is_empty {
-                    reply.error(libc::ENOTEMPTY);
-                    return;
-                }
             }
+
+            handle_db_err!(
+                query("DELETE FROM file_attrs WHERE ino = ?")
+                    .bind(ino)
+                    .execute(&self.pool)
+                    .await,
+                reply
+            );
 
             reply.ok();
         })
