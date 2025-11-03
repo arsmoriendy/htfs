@@ -437,19 +437,48 @@ impl Filesystem for TagFileSystem<Sqlite> {
         self.rt.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
+            let parent_prefixed = if parent != 1 // not root
+                && self.is_prefixed(&handle_db_err!(
+                    self.get_ino_name(to_i64!(parent, reply)).await,
+                    reply
+                )) {
+                true
+            } else {
+                false
+            };
+
             // TODO: handle untagged dir inside tagged dir
-            let ino = handle_db_err!(
-                query_scalar::<_, i64>(
-                    "SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino = \
-                     dir_contents.cnt_ino INNER JOIN file_attrs ON file_attrs.ino = \
-                     dir_contents.cnt_ino WHERE kind = 3 AND dir_ino = ? AND name = ?"
+            let ino = if parent_prefixed {
+                let mut query_builder = QueryBuilder::<Sqlite>::new(
+                    "SELECT * FROM readdir_rows WHERE name = ? AND ino IN (",
+                );
+
+                let parent_tags = handle_db_err!(self.get_ass_tags(parent).await, reply);
+                handle_db_err!(chain_tagged_inos(&mut query_builder, &parent_tags), reply);
+
+                handle_db_err!(
+                    query_builder
+                        .push(") OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ?)")
+                        .build_query_scalar()
+                        .bind(name.to_str().unwrap())
+                        .bind(to_i64!(parent, reply))
+                        .fetch_one(&self.pool)
+                        .await,
+                    reply
                 )
-                .bind(to_i64!(parent, reply))
-                .bind(name.to_str().unwrap())
-                .fetch_one(&self.pool)
-                .await,
-                reply
-            );
+            } else {
+                handle_db_err!(
+                    query_scalar::<_, i64>(
+                        "SELECT cnt_ino FROM dir_contents INNER JOIN file_names ON file_names.ino \
+                         = dir_contents.cnt_ino WHERE dir_ino = ? AND name = ?"
+                    )
+                    .bind(to_i64!(parent, reply))
+                    .bind(name.to_str().unwrap())
+                    .fetch_one(&self.pool)
+                    .await,
+                    reply
+                )
+            };
 
             // error if not empty
             let is_empty = handle_db_err!(
