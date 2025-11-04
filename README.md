@@ -4,4 +4,5 @@
 - implement CLI interface
 - fix join handle on stashed init test
 - test remount
-- find a way to untag files
+- handle hard links
+- calculate directory size

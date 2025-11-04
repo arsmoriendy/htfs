@@ -25,26 +25,20 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 ),
                 &FileAttr {
                     ino: 1,
-                    nlink: 1,
-                    rdev: 0,
-
-                    // TODO: size related
-                    size: 0,
-                    blocks: 0,
-
                     atime: SystemTime::now(),
                     mtime: SystemTime::now(),
                     ctime: SystemTime::now(),
                     crtime: SystemTime::now(),
                     kind: FileType::Directory,
-
-                    // TODO: permission related, sync with original dir mayhaps?
-                    perm: 0o777,
-
                     uid: req.uid(),
                     gid: req.gid(),
+                    perm: 0o777, // TODO: permission related, sync with original dir mayhaps?
+                    size: 0,     // TODO: calculate size
 
-                    // TODO: misc
+                    // unused
+                    nlink: 1,
+                    rdev: 0,
+                    blocks: 0,
                     blksize: 0,
                     flags: 0,
                 },
@@ -117,7 +111,6 @@ impl Filesystem for TagFileSystem<Sqlite> {
         });
     }
 
-    // TODO: prefix
     #[tracing::instrument]
     fn mknod(
         &mut self,
@@ -447,8 +440,8 @@ impl Filesystem for TagFileSystem<Sqlite> {
                 false
             };
 
-            // TODO: handle untagged dir inside tagged dir
             let ino = if parent_prefixed {
+                // TODO: handle untagged dir
                 let mut query_builder = QueryBuilder::<Sqlite>::new(
                     "SELECT * FROM readdir_rows WHERE name = ? AND ino IN (",
                 );
@@ -773,7 +766,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         name: &std::ffi::OsStr,
         newparent: u64,
         newname: &std::ffi::OsStr,
-        _flags: u32, // TODO: what is this for?
+        _flags: u32,
         reply: ReplyEmpty,
     ) {
         self.rt.block_on(async {
