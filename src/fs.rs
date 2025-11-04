@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 impl Filesystem for TagFileSystem<Sqlite> {
     #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             migrate!().run(&self.pool).await.unwrap();
 
             // create mountpoint attr if not exist
@@ -52,14 +52,14 @@ impl Filesystem for TagFileSystem<Sqlite> {
     #[tracing::instrument]
     fn destroy(&mut self) {
         // TODO: delete shm and wal files
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             let _c = &self.pool.close().await;
         });
     }
 
     #[tracing::instrument]
     fn getattr(&mut self, req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b100);
 
             let attr_row = handle_db_err!(
@@ -84,7 +84,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         name: &std::ffi::OsStr,
         reply: ReplyEntry,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b100);
 
             let mut query_builder =
@@ -122,7 +122,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         _rdev: u32,
         reply: ReplyEntry,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
             // TODO: handle duplicates
@@ -215,7 +215,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b100);
             let name = if ino != 1 {
                 Some(handle_db_err!(
@@ -286,7 +286,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         _umask: u32,
         reply: ReplyEntry,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
             let name_str = name.to_str().unwrap();
@@ -427,7 +427,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
 
     #[tracing::instrument]
     fn rmdir(&mut self, req: &Request<'_>, parent: u64, name: &std::ffi::OsStr, reply: ReplyEmpty) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
             let parent_prefixed = if parent != 1 // not root
@@ -546,7 +546,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         name: &std::ffi::OsStr,
         reply: ReplyEmpty,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, parent, req, reply, 0b010);
 
             let mut query_builder =
@@ -602,7 +602,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         flags: Option<u32>,
         reply: ReplyAttr,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b010);
 
             let row = handle_db_err!(
@@ -667,7 +667,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         _lock_owner: Option<u64>,
         reply: ReplyWrite,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b010);
 
             let data_len = to_i64!(data.len(), reply);
@@ -739,7 +739,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         _lock_owner: Option<u64>,
         reply: ReplyData,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b100);
 
             let data = handle_db_err!(
@@ -770,7 +770,7 @@ impl Filesystem for TagFileSystem<Sqlite> {
         _flags: u32,
         reply: ReplyEmpty,
     ) {
-        self.rt.block_on(async {
+        self.runtime_handle.block_on(async {
             let old_parent_name = if parent == 1 {
                 None
             } else {

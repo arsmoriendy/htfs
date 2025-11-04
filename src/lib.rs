@@ -11,12 +11,12 @@ use fuser::{FileAttr, Request};
 use libc::c_int;
 use sqlx::{Database, Pool, Sqlite, query, query_as, query_scalar};
 use std::{num::TryFromIntError, time::SystemTime};
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 #[derive(Debug)]
 pub struct TagFileSystem<DB: Database> {
     pub pool: Pool<DB>,
-    pub rt: Runtime,
+    pub runtime_handle: Handle,
     pub tag_prefix: String,
 }
 
