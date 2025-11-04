@@ -441,20 +441,21 @@ impl Filesystem for TagFileSystem<Sqlite> {
             };
 
             let ino = if parent_prefixed {
-                // TODO: handle untagged dir
-                let mut query_builder = QueryBuilder::<Sqlite>::new(
-                    "SELECT * FROM readdir_rows WHERE name = ? AND ino IN (",
-                );
+                let mut query_builder =
+                    QueryBuilder::<Sqlite>::new("SELECT * FROM readdir_rows WHERE (ino IN (");
 
                 let parent_tags = handle_db_err!(self.get_ass_tags(parent).await, reply);
                 handle_db_err!(chain_tagged_inos(&mut query_builder, &parent_tags), reply);
 
                 handle_db_err!(
                     query_builder
-                        .push(") OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ?)")
+                        .push(
+                            ") OR ino IN (SELECT cnt_ino FROM dir_contents WHERE dir_ino = ?)) \
+                             AND name = ?"
+                        )
                         .build_query_scalar()
-                        .bind(name.to_str().unwrap())
                         .bind(to_i64!(parent, reply))
+                        .bind(name.to_str().unwrap())
                         .fetch_one(&self.pool)
                         .await,
                     reply
