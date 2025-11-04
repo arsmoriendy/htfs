@@ -531,6 +531,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "htfs"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fuser",
+ "libc",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1413,19 +1426,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tfs"
-version = "0.1.0"
-dependencies = [
- "clap",
- "fuser",
- "libc",
- "sqlx",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

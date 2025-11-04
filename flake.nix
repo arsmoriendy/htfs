@@ -1,5 +1,5 @@
 {
-  description = "Flake for developing TagFS";
+  description = "Flake for developing HTFS";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";

@@ -14,13 +14,13 @@ use std::{num::TryFromIntError, time::SystemTime};
 use tokio::runtime::Handle;
 
 #[derive(Debug)]
-pub struct TagFileSystem<DB: Database> {
+pub struct HTFS<DB: Database> {
     pub pool: Pool<DB>,
     pub runtime_handle: Handle,
     pub tag_prefix: String,
 }
 
-impl TagFileSystem<Sqlite> {
+impl HTFS<Sqlite> {
     async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
         let q = query_scalar::<_, u64>(
             "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, \

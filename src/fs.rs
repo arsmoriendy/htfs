@@ -1,5 +1,5 @@
 use crate::{
-    TagFileSystem,
+    HTFS,
     db_helpers::{
         chain_tagged_inos, try_bind_attrs,
         types::{FileAttrRow, ReadDirRow, mode_to_filetype, to_filetype},
@@ -11,7 +11,7 @@ use libc::c_int;
 use sqlx::{QueryBuilder, Sqlite, migrate, query, query_as, query_scalar};
 use std::time::{Duration, SystemTime};
 
-impl Filesystem for TagFileSystem<Sqlite> {
+impl Filesystem for HTFS<Sqlite> {
     #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         self.runtime_handle.block_on(async {

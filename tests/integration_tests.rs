@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod integration_tests {
     use fuser::{BackgroundSession, spawn_mount2};
+    use htfs::HTFS;
     use sqlx::{
         Pool, Sqlite, SqlitePool, migrate, query, query_as, query_scalar,
         sqlite::SqliteConnectOptions,
@@ -14,7 +15,6 @@ mod integration_tests {
         thread::sleep,
         time::{Duration, SystemTime},
     };
-    use tfs::TagFileSystem;
     use tokio::test;
 
     macro_rules! sleep {

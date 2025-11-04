@@ -1,8 +1,8 @@
 use std::{fs::File, str::FromStr};
 
 use clap::Parser;
+use htfs::HTFS;
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
-use tfs::TagFileSystem;
 use tokio::runtime::{Handle, Runtime};
 
 fn main() {
@@ -28,7 +28,7 @@ fn main() {
         .await
         .unwrap();
 
-        TagFileSystem {
+        HTFS {
             pool: pool,
             runtime_handle: Handle::current(),
             tag_prefix: prefix,
