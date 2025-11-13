@@ -1,4 +1,7 @@
-# HTFS - Hash Tag File System
+# htfs - Hash Tag File System
+
+> [!warning]
+> htfs is in early stages of development, and not suitable for daily use
 
 Prefixed tag based, hierarchic file system.
 
@@ -34,6 +37,7 @@ tree --inodes mountpoint
 ###### TODO
 
 - circumvent sqlite size limit
+- improve write speed
 - handle hard links
 - calculate directory size
 - handle superset duplicates (e.g. $f \in A \cup B$, $f' \in A$ where $f$ and $f'$ has the same name)
