@@ -3,8 +3,8 @@ mod macros;
 
 pub use std::{
     fs::{File, create_dir, remove_dir, remove_file, rename},
-    io::ErrorKind as IoErrorKind,
-    path::PathBuf,
+    io::{ErrorKind as IoErrorKind, Result as IoResult},
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -12,6 +12,11 @@ pub use fuser::{BackgroundSession, spawn_mount2};
 pub use htfs::HTFS;
 pub use sqlx::{SqlitePool, query, query_scalar, sqlite::SqliteConnectOptions};
 pub use tokio::runtime::Runtime;
+
+/// Alias to `File::create_new`
+pub fn create_file<P: AsRef<Path>>(path: P) -> IoResult<File> {
+    File::create_new(path)
+}
 
 pub struct Test {
     pub rt: Runtime,
