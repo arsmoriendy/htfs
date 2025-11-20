@@ -21,7 +21,7 @@ pub fn test_write() {
     // 5.   [-||]
     // 6.   [-|-][--|]
     // 7.   [---][-|-][--|]
-    // 8.   [ooo][-|-][--|]
+    // 8.   [ooo][o|-][--|]
     // 9.   [||o]
     // 10.  [|--][-|o]
     // 11.  [---][|--][-|o]
@@ -44,10 +44,7 @@ fn aligned() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(
-            query_scalar("SELECT bytes FROM file_contents WHERE ino = 2 AND page = 0")
-                .fetch_one(&pool),
-        )
+        .block_on(read_file_query!().bind(2).fetch_one(&pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -63,13 +60,7 @@ fn aligned_span() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(
-            query_scalar(
-                "SELECT (SELECT bytes FROM file_contents WHERE ino = 2 AND page = 0) || (SELECT \
-                 bytes FROM file_contents WHERE ino = 2 AND page = 1)",
-            )
-            .fetch_one(&pool),
-        )
+        .block_on(read_file_query!().bind(2).fetch_one(&pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -85,10 +76,7 @@ fn unaligned_end() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(
-            query_scalar("SELECT bytes FROM file_contents WHERE ino = 2 AND page = 0")
-                .fetch_one(&pool),
-        )
+        .block_on(read_file_query!().bind(2).fetch_one(&pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -104,15 +92,9 @@ fn unaligned_end_span() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(
-            query_scalar(
-                "SELECT (SELECT bytes FROM file_contents WHERE ino = 2 AND page = 0) || (SELECT \
-                 bytes FROM file_contents WHERE ino = 2 AND page = 1)",
-            )
-            .fetch_one(&pool),
-        )
+        .block_on(read_file_query!().bind(2).fetch_one(&pool))
         .unwrap();
-    assert!(bytes == db_bytes);
+    assert_eq!(bytes, db_bytes);
 
     Test::cleanup(bg_sess);
 }

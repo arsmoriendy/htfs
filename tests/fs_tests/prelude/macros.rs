@@ -62,3 +62,12 @@ macro_rules! load_prelude {
         use super::prelude::*;
     };
 }
+
+macro_rules! read_file_query {
+    () => {
+        query_scalar(
+            "SELECT GROUP_CONCAT(bytes, '') FROM (SELECT bytes FROM file_contents WHERE ino = ? \
+             ORDER BY page)",
+        )
+    };
+}
