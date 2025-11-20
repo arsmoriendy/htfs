@@ -109,6 +109,13 @@ impl HTFS<Sqlite> {
             .await
             .map_err(|e| DBError::from(e))
     }
+
+    async fn get_db_page_size(&self) -> Result<u64, DBError> {
+        query_scalar("PRAGMA page_size")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DBError::from(e))
+    }
 }
 
 fn has_perm(f_uid: u32, f_gid: u32, f_perm: u16, uid: u32, gid: u32, rwx: u16) -> bool {

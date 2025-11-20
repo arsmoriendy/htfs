@@ -666,94 +666,53 @@ impl Filesystem for HTFS<Sqlite> {
         self.runtime_handle.block_on(async {
             handle_auth_perm!(self, ino, req, reply, 0b010);
 
-            let data_len = to_i64!(data.len(), reply);
+            // TODO: handle:
+            // - empty file with offset > 0
+            // - offset > initial file size
+            // - collission (aka rewrite)
 
-            let cnt_len = handle_db_err!(
-                query_scalar::<_, i64>("SELECT LENGTH(content) FROM file_contents WHERE ino = $1")
-                    .bind(to_i64!(ino, reply))
-                    .fetch_optional(&self.pool)
-                    .await,
-                reply
-            );
+            let page_size = handle_db_err!(self.get_db_page_size().await, reply);
+            let u_offset: u64 = handle_from_int_err!(offset.try_into(), reply);
+            let start_page = u_offset / page_size;
+            let data_length: u64 = handle_from_int_err!(data.len().try_into(), reply);
+            let page_span = (data_length - 1) / page_size + 1;
 
-            let pad_len: Option<i64> = match cnt_len {
-                Some(l) => {
-                    if offset > l {
-                        Some(offset - l)
-                    } else {
-                        None
-                    }
-                }
-                None => None,
-            };
+            for page in 0..page_span {
+                let usize_page_size: usize = handle_from_int_err!(page_size.try_into(), reply);
+                let data_start: usize = match page {
+                    0 => 0,
+                    _ => handle_from_int_err!((page * page_size - 1).try_into(), reply),
+                };
+                let data_end = match page {
+                    0 => data_start + usize_page_size,
+                    _ => data_start + usize_page_size + 1,
+                };
+                tracing::error!(
+                    "`data_start = {data_start}, data_end = {data_end}, data_length = \
+                     {data_length}, page = {page}, start_page = {start_page} page_size = \
+                     {page_size}, page_span = {page_span}",
+                );
+                let Some(data_slice) = data.get(data_start..data_end) else {
+                    reply.error(libc::EIO); // TODO: find appropriate error code
+                    return;
+                };
+                handle_db_err!(
+                    query("INSERT INTO file_contents (ino, page, bytes) VALUES (?, ?, ?)")
+                        .bind(to_i64!(ino, reply))
+                        .bind(to_i64!(start_page + page, reply))
+                        .bind(data_slice)
+                        .execute(&self.pool)
+                        .await,
+                    reply
+                );
+            }
 
-            // cast to BLOB because sqlite converts all concat (||) expressions to TEXT
-            // https://stackoverflow.com/questions/55301281/update-query-to-append-zeroes-into-blob-field-with-sqlitestudio
-            handle_db_err!(
-                query(
-                    "INSERT INTO file_contents VALUES ($4, CAST(ZEROBLOB($5) || $2 AS BLOB)) ON \
-                     CONFLICT(ino) DO UPDATE SET content = CAST(SUBSTR(content, 1, $1) || \
-                     ZEROBLOB($5) || $2 || SUBSTR(content, $3) AS BLOB) WHERE ino = $4"
-                )
-                .bind(offset)
-                .bind(data)
-                .bind(offset + 1 + data_len)
-                .bind(to_i64!(ino, reply))
-                .bind(pad_len.unwrap_or(0))
-                .execute(&self.pool)
-                .await,
-                reply
-            );
-
-            handle_db_err!(
-                query(
-                    "UPDATE file_attrs SET size = (SELECT LENGTH(content) FROM file_contents \
-                     WHERE ino = $1) WHERE ino = $1"
-                )
-                .bind(to_i64!(ino, reply))
-                .execute(&self.pool)
-                .await,
-                reply
-            );
-
-            handle_db_err!(self.sync_mtime(ino).await, reply);
-
-            let dat_len_32 = handle_from_int_err!(u32::try_from(data_len), reply);
-            reply.written(dat_len_32);
+            let _written_size = handle_from_int_err!(data.len().try_into(), reply);
+            reply.written(_written_size);
         });
     }
 
-    #[tracing::instrument]
-    fn read(
-        &mut self,
-        req: &Request<'_>,
-        ino: u64,
-        _fh: u64,
-        offset: i64,
-        size: u32,
-        _flags: i32,
-        _lock_owner: Option<u64>,
-        reply: ReplyData,
-    ) {
-        self.runtime_handle.block_on(async {
-            handle_auth_perm!(self, ino, req, reply, 0b100);
-
-            let data = handle_db_err!(
-                query_scalar::<_, Box<[u8]>>(
-                    "SELECT SUBSTR(content, $1, $2) FROM file_contents WHERE ino = $3",
-                )
-                .bind(offset)
-                .bind(size)
-                .bind(to_i64!(ino, reply))
-                .fetch_one(&self.pool)
-                .await,
-                reply
-            );
-
-            handle_db_err!(self.sync_atime(ino).await, reply);
-            reply.data(Box::leak(data));
-        });
-    }
+    // TODO: read
 
     #[tracing::instrument]
     fn rename(
