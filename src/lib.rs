@@ -142,7 +142,7 @@ fn has_perm(f_uid: u32, f_gid: u32, f_perm: u16, uid: u32, gid: u32, rwx: u16) -
 
 fn handle_from_int_err<T>(expr: Result<T, TryFromIntError>) -> Result<T, c_int> {
     expr.map_err(|e| {
-        tracing::error!("{e}");
+        tracing::debug!("{e}");
         libc::ERANGE
     })
 }
@@ -154,7 +154,7 @@ where
     expr.map_err(|e| {
         let db_err: DBError = e.into();
         let (code, s) = db_err.map_db_err();
-        tracing::error!("{s}");
+        tracing::debug!("{s}");
         code
     })
 }
