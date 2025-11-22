@@ -10,7 +10,7 @@ use fuser::*;
 use libc::c_int;
 use sqlx::{QueryBuilder, Sqlite, migrate, query, query_as, query_scalar};
 use std::{
-    cmp::min,
+    cmp::{max, min},
     time::{Duration, SystemTime},
 };
 
@@ -675,35 +675,127 @@ impl Filesystem for HTFS<Sqlite> {
             // - collission (aka rewrite)
 
             let page_size = handle_db_err!(self.get_db_page_size().await, reply);
+            let usize_page_size: usize = handle_from_int_err!(page_size.try_into(), reply);
             let u_offset: u64 = handle_from_int_err!(offset.try_into(), reply);
+            let usize_offset = handle_from_int_err!(offset.try_into(), reply);
             let start_page = u_offset / page_size;
             let data_length: u64 = handle_from_int_err!(data.len().try_into(), reply);
             let page_span = (data_length - 1) / page_size + 1;
+            let end_page = start_page + page_span - 1;
+            let old_last_page: Option<u64> = handle_db_err!(
+                query_scalar(
+                    "SELECT page FROM file_contents WHERE ino = ? ORDER BY page DESC LIMIT 1"
+                )
+                .bind(to_i64!(ino, reply))
+                .fetch_optional(&self.pool)
+                .await,
+                reply
+            );
+            let last_page: u64 = match old_last_page {
+                Some(old_last_page) => max(old_last_page, end_page),
+                None => end_page,
+            };
 
-            for page in 0..page_span {
-                let usize_page_size: usize = handle_from_int_err!(page_size.try_into(), reply);
-                let data_start: usize = match page {
-                    0 => 0,
-                    _ => handle_from_int_err!((page * page_size - 1).try_into(), reply),
-                };
-                let data_end = match page {
-                    0 => data_start + usize_page_size,
-                    _ => data_start + usize_page_size + 1,
-                };
-                tracing::error!(
-                    "`data_start = {data_start}, data_end = {data_end}, data_length = \
-                     {data_length}, page = {page}, start_page = {start_page} page_size = \
-                     {page_size}, page_span = {page_span}",
+            if let Some(old_last_page) = old_last_page
+                && last_page > old_last_page
+            {
+                let mut content: Vec<u8> = handle_db_err!(
+                    query_scalar("SELECT bytes FROM file_contents WHERE ino = ? AND page = ?")
+                        .bind(to_i64!(ino, reply))
+                        .bind(to_i64!(old_last_page, reply))
+                        .fetch_one(&self.pool)
+                        .await,
+                    reply
                 );
-                let Some(data_slice) = data.get(data_start..min(data_end, data.len())) else {
+                content.resize(usize_page_size, 0);
+                handle_db_err!(
+                    query("UPDATE file_contents SET bytes = ? WHERE ino = ? and page = ?")
+                        .bind(content)
+                        .bind(to_i64!(ino, reply))
+                        .bind(to_i64!(old_last_page, reply))
+                        .execute(&self.pool)
+                        .await,
+                    reply
+                );
+            }
+            for offset_page in 0..page_span {
+                let page = start_page + offset_page;
+                let data_start: usize = match offset_page {
+                    0 => 0,
+                    _ => handle_from_int_err!((offset_page * page_size - 1).try_into(), reply),
+                };
+                let data_end = min(
+                    match offset_page {
+                        0 => data_start + usize_page_size,
+                        _ => data_start + usize_page_size + 1,
+                    },
+                    data.len(),
+                );
+                let Some(data_slice) = data.get(data_start..data_end) else {
                     reply.error(libc::EIO); // TODO: find appropriate error code
                     return;
+                };
+                let db_data: Option<Vec<u8>> = handle_db_err!(
+                    query_scalar("SELECT bytes FROM file_contents WHERE ino = ? AND page = ?")
+                        .bind(to_i64!(ino, reply))
+                        .bind(to_i64!(page, reply))
+                        .fetch_optional(&self.pool)
+                        .await,
+                    reply
+                );
+                if let Some(mut db_data) = db_data {
+                    if offset_page == last_page {
+                        let new_len = max(
+                            match offset_page == start_page && offset_page == end_page {
+                                true => usize_offset + 1 + data_slice.len(),
+                                false => data_slice.len(),
+                            },
+                            db_data.len(),
+                        );
+                        db_data.resize(new_len, 0);
+                    }
+                    let start_offset = match offset_page == start_page {
+                        true => usize_offset,
+                        false => 0,
+                    };
+                    db_data[start_offset..].copy_from_slice(data_slice);
+                    handle_db_err!(
+                        query("UPDATE file_contents SET bytes = ? WHERE ino = ? AND page = ?")
+                            .bind(db_data)
+                            .bind(to_i64!(ino, reply))
+                            .bind(to_i64!(page, reply))
+                            .execute(&self.pool)
+                            .await,
+                        reply
+                    );
+                    continue;
+                }
+                let data_slice_vec = match data_slice.len() == usize_page_size {
+                    true => None,
+                    false => {
+                        let mut data_slice_vec = data_slice.to_vec();
+                        if offset_page == start_page {
+                            let old_len = data_slice_vec.len();
+                            data_slice_vec.resize(old_len + usize_offset, 0);
+                            data_slice_vec.copy_within(0..old_len, usize_offset);
+                            data_slice_vec[..usize_offset].fill(0);
+                        }
+                        if page != last_page {
+                            data_slice_vec.resize(usize_page_size, 0);
+                        }
+                        Some(data_slice_vec)
+                    }
                 };
                 handle_db_err!(
                     query("INSERT INTO file_contents (ino, page, bytes) VALUES (?, ?, ?)")
                         .bind(to_i64!(ino, reply))
-                        .bind(to_i64!(start_page + page, reply))
-                        .bind(data_slice)
+                        .bind(to_i64!(page, reply))
+                        .bind(
+                            data_slice_vec
+                                .as_ref()
+                                .map(|v| v.as_ref())
+                                .unwrap_or(data_slice)
+                        )
                         .execute(&self.pool)
                         .await,
                     reply
