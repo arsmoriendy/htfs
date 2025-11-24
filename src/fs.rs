@@ -828,7 +828,43 @@ impl Filesystem for HTFS<Sqlite> {
         });
     }
 
-    // TODO: read
+    #[tracing::instrument]
+    fn read(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        _fh: u64,
+        offset: i64,
+        size: u32,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        reply: ReplyData,
+    ) {
+        self.runtime_handle.block_on(async {
+            let mut data = vec![0u8; 0];
+            let page_size = handle_db_err!(self.get_db_page_size().await, reply);
+            let usize_page_size: usize = handle_db_err!(page_size.try_into(), reply);
+            let u_offset: u64 = handle_from_int_err!(offset.try_into(), reply);
+            let start_page = u_offset / page_size;
+            let page_span = (u64::from(size) - 1) / page_size + 1;
+
+            for offset_page in 0..page_span {
+                let page = start_page + offset_page;
+                let db_bytes: Option<Vec<u8>> = handle_db_err!(
+                    query_scalar("SELECT bytes FROM file_contents WHERE ino = ? AND page = ?")
+                        .bind(to_i64!(ino, reply))
+                        .bind(to_i64!(page, reply))
+                        .fetch_optional(&self.pool)
+                        .await,
+                    reply
+                );
+                let bytes = db_bytes.unwrap_or(vec![0u8; usize_page_size]);
+                data.extend_from_slice(&bytes);
+            }
+
+            reply.data(&data);
+        });
+    }
 
     #[tracing::instrument]
     fn rename(
