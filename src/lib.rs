@@ -116,6 +116,77 @@ impl HTFS<Sqlite> {
             .await
             .map_err(|e| DBError::from(e))
     }
+
+    async fn change_file_size(&self, ino: u64, new_size: u64) -> Result<(), DBError> {
+        let ino: i64 = ino.try_into()?;
+        let new_size: i64 = new_size.try_into()?;
+        let page_size: i64 = self.get_db_page_size().await?.try_into()?;
+        let usize_page_size = page_size.try_into()?;
+        let new_last_page = new_size / page_size;
+        let new_last_page_size = new_size % page_size;
+
+        let create_new_last_page = || {
+            query("INSERT INTO file_contents (ino, page, bytes) VALUES (?,?,ZEROBLOB(?))")
+                .bind(ino)
+                .bind(new_last_page)
+                .bind(new_last_page_size)
+                .execute(&self.pool)
+        };
+        let truncate_new_last_page = || {
+            query(
+                "UPDATE file_contents SET bytes = CAST(SUBSTR(bytes, 1, ?) AS BLOB) WHERE ino = ? \
+                 and page = ?",
+            )
+            .bind(new_last_page_size)
+            .bind(ino)
+            .bind(new_last_page)
+            .execute(&self.pool)
+        };
+
+        // check file has content
+        let old_last_page_query: Option<(i64, Vec<u8>)> = query_as(
+            "SELECT page, bytes FROM file_contents WHERE ino = ? ORDER BY page DESC LIMIT 1",
+        )
+        .bind(ino)
+        .fetch_optional(&self.pool)
+        .await?;
+        if let Some((old_last_page, mut old_last_page_bytes)) = old_last_page_query {
+            if new_last_page > old_last_page {
+                // rpad old last page
+                old_last_page_bytes.resize(usize_page_size, 0);
+                query("UPDATE file_contents SET bytes = ? WHERE ino = ? and page = ?")
+                    .bind(old_last_page_bytes)
+                    .bind(ino)
+                    .bind(old_last_page)
+                    .execute(&self.pool)
+                    .await?;
+
+                create_new_last_page().await?;
+            } else if new_last_page < old_last_page {
+                // delete pages > new_last_page
+                query("DELETE FROM file_contents WHERE ino = ? AND page > ?")
+                    .bind(ino)
+                    .bind(new_last_page)
+                    .execute(&self.pool)
+                    .await?;
+                // check if new_last_page exists
+                match query("SELECT 1 FROM file_contents WHERE ino = ? AND page = ?")
+                    .bind(ino)
+                    .bind(new_last_page)
+                    .fetch_optional(&self.pool)
+                    .await?
+                {
+                    Some(_) => truncate_new_last_page().await?,
+                    None => create_new_last_page().await?,
+                };
+            } else if new_last_page == old_last_page {
+                truncate_new_last_page().await?;
+            };
+        } else {
+            create_new_last_page().await?;
+        };
+        Ok(())
+    }
 }
 
 fn has_perm(f_uid: u32, f_gid: u32, f_perm: u16, uid: u32, gid: u32, rwx: u16) -> bool {

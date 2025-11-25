@@ -615,19 +615,9 @@ impl Filesystem for HTFS<Sqlite> {
             let mut attr: FileAttr = handle_db_err!(FileAttr::try_from(&row), reply).into();
 
             attr.size = match size {
-                Some(s) => {
-                    handle_db_err!(
-                        query(
-                            "UPDATE file_contents SET content = CAST(SUBSTR(content, 1, $1) AS \
-                             BLOB) WHERE ino = $2"
-                        )
-                        .bind(to_i64!(s, reply))
-                        .bind(to_i64!(ino, reply))
-                        .execute(&self.pool)
-                        .await,
-                        reply
-                    );
-                    s
+                Some(new_size) => {
+                    handle_db_err!(self.change_file_size(ino, new_size).await, reply);
+                    new_size
                 }
                 None => attr.size,
             };
