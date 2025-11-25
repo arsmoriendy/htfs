@@ -3,7 +3,8 @@ mod macros;
 
 pub use std::{
     fs::{File, create_dir, remove_dir, remove_file, rename},
-    io::{ErrorKind as IoErrorKind, Result as IoResult},
+    io::{ErrorKind as IoErrorKind, Result as IoResult, Write},
+    os::unix::fs::FileExt,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -43,3 +44,4 @@ impl Test {
 
 pub const DB_PATH: &str = "test-db.sqlite";
 pub const MP_PATH: &str = "test-mountpoint";
+pub const PAGE_SIZE: usize = 4096;
