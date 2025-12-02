@@ -39,7 +39,7 @@ fn unaligned_start_end_span() {
 
     let pages: u64 = rt
         .block_on(
-            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(&pool),
+            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(pool),
         )
         .unwrap();
     assert_eq!(pages, 1);
@@ -47,7 +47,7 @@ fn unaligned_start_end_span() {
     let db_bytes: Vec<u8> = rt
         .block_on(
             query_scalar("SELECT bytes FROM file_contents WHERE ino = 2 AND page = 1")
-                .fetch_one(&pool),
+                .fetch_one(pool),
         )
         .unwrap();
     let mut new_bytes = vec![0u8; 512];
@@ -66,7 +66,7 @@ fn aligned() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -82,7 +82,7 @@ fn aligned_span() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -98,7 +98,7 @@ fn unaligned_end() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes == db_bytes);
 
@@ -114,7 +114,7 @@ fn unaligned_end_span() {
     file.write_all(&bytes).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert_eq!(bytes, db_bytes);
 

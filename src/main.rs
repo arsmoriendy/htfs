@@ -34,17 +34,19 @@ fn main() {
 
     let rt = Runtime::new().unwrap();
     let fs = rt.block_on(async {
-        let pool = SqlitePool::connect_with(
-            SqliteConnectOptions::from_str(format!("sqlite:{}", database).as_str())
-                .unwrap()
-                // disable caching
-                // .pragma("cache_size", "0")
-                // .statement_cache_capacity(0)
-                .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
-                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
-        )
-        .await
-        .unwrap();
+        let pool = Box::leak(Box::new(
+            SqlitePool::connect_with(
+                SqliteConnectOptions::from_str(format!("sqlite:{}", database).as_str())
+                    .unwrap()
+                    // disable caching
+                    // .pragma("cache_size", "0")
+                    // .statement_cache_capacity(0)
+                    .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
+                    .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
+            )
+            .await
+            .unwrap(),
+        ));
 
         HTFS {
             pool: pool,

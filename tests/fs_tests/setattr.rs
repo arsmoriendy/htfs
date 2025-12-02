@@ -31,13 +31,13 @@ fn truncate_file3() {
 
     let pages: u64 = rt
         .block_on(
-            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(&pool),
+            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(pool),
         )
         .unwrap();
     assert_eq!(pages, 1);
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert_eq!(db_bytes, vec![0u8; size]);
 
@@ -56,13 +56,13 @@ fn truncate_file2() {
     file.set_len(new_size.try_into().unwrap()).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes[..new_size] == db_bytes);
 
     let pages: u64 = rt
         .block_on(
-            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(&pool),
+            query_scalar("SELECT LENGTH(page) FROM file_contents WHERE ino = 2").fetch_one(pool),
         )
         .unwrap();
     assert_eq!(pages, 1);
@@ -82,7 +82,7 @@ fn extend_file() {
     file.set_len(new_size.try_into().unwrap()).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     bytes.resize(new_size, 0);
     assert!(bytes == db_bytes);
@@ -102,7 +102,7 @@ fn truncate_file() {
     file.set_len(new_size.try_into().unwrap()).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes[..new_size] == db_bytes);
 
@@ -118,7 +118,7 @@ fn resize_empty_file() {
     file.set_len(size.try_into().unwrap()).unwrap();
 
     let db_bytes: Vec<u8> = rt
-        .block_on(read_file_query!().bind(2).fetch_one(&pool))
+        .block_on(read_file_query!().bind(2).fetch_one(pool))
         .unwrap();
     assert!(bytes == db_bytes);
 

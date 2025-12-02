@@ -7,186 +7,177 @@ use db_helpers::{
     try_bind_attrs,
     types::{Bindable, DBError, FileAttrRow, from_systime},
 };
-use fuser::{FileAttr, Request};
+use fuser::FileAttr;
 use libc::c_int;
-use sqlx::{Database, Pool, Sqlite, query, query_as, query_scalar};
+use sqlx::{Database, Pool, SqlitePool, query, query_as, query_scalar};
 use std::{num::TryFromIntError, time::SystemTime};
 use tokio::runtime::Handle;
 
 #[derive(Debug)]
 pub struct HTFS<DB: Database> {
-    pub pool: Pool<DB>,
+    pub pool: &'static Pool<DB>,
     pub runtime_handle: Handle,
     pub tag_prefix: String,
 }
 
-impl HTFS<Sqlite> {
-    async fn ins_attrs(&self, attr: &FileAttr) -> Result<u64, DBError> {
-        let q = query_scalar::<_, u64>(
-            "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, \
-             $13, $14, $15) RETURNING ino",
-        );
-        Ok(try_bind_attrs(q, attr)?
-            .inner()
-            .fetch_one(&self.pool)
-            .await?)
+pub fn is_prefixed(prefix: &str, filename: &str) -> bool {
+    let prefix_position = filename.as_bytes().get(0..prefix.len());
+    match prefix_position {
+        Some(oss) => oss == prefix.as_bytes(),
+        None => false,
     }
+}
 
-    async fn upd_attrs(&self, attr: &FileAttr) -> Result<(), DBError> {
-        let q = query(
-            "UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, \
-             crtime = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, \
-             blksize = $14, flags = $15 WHERE ino = $1",
-        );
-        try_bind_attrs(q, attr)?.execute(&self.pool).await?;
-        Ok(())
-    }
+pub async fn ins_attrs(pool: &SqlitePool, attr: &FileAttr) -> Result<u64, DBError> {
+    let q = query_scalar::<_, u64>(
+        "INSERT INTO file_attrs VALUES (NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, \
+         $14, $15) RETURNING ino",
+    );
+    Ok(try_bind_attrs(q, attr)?.inner().fetch_one(pool).await?)
+}
 
-    async fn get_ass_tags(&self, ino: u64) -> Result<Vec<u64>, DBError> {
-        Ok(
-            query_scalar::<_, u64>("SELECT tid FROM associated_tags WHERE ino = ?")
-                .bind(i64::try_from(ino)?)
-                .fetch_all(&self.pool)
-                .await?,
-        )
-    }
+pub async fn upd_attrs(pool: &SqlitePool, attr: &FileAttr) -> Result<(), DBError> {
+    let q = query(
+        "UPDATE file_attrs SET size = $2, blocks = $3, atime = $4, mtime = $5, ctime = $6, crtime \
+         = $7, kind = $8, perm = $9, nlink = $10, uid = $11, gid = $12, rdev = $13, blksize = \
+         $14, flags = $15 WHERE ino = $1",
+    );
+    try_bind_attrs(q, attr)?.execute(pool).await?;
+    Ok(())
+}
 
-    async fn sync_mtime(&self, ino: u64) -> Result<(), DBError> {
-        query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
-            .bind(i64::try_from(from_systime(SystemTime::now())?)?)
+pub async fn get_ass_tags(pool: &SqlitePool, ino: u64) -> Result<Vec<u64>, DBError> {
+    Ok(
+        query_scalar::<_, u64>("SELECT tid FROM associated_tags WHERE ino = ?")
             .bind(i64::try_from(ino)?)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
+            .fetch_all(pool)
+            .await?,
+    )
+}
 
-    async fn sync_atime(&self, ino: u64) -> Result<(), DBError> {
-        query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
-            .bind(i64::try_from(from_systime(SystemTime::now())?)?)
-            .bind(i64::try_from(ino)?)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
+pub async fn sync_mtime(pool: &SqlitePool, ino: u64) -> Result<(), DBError> {
+    query("UPDATE file_attrs SET mtime = ? WHERE ino = ?")
+        .bind(i64::try_from(from_systime(SystemTime::now())?)?)
+        .bind(i64::try_from(ino)?)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
 
-    async fn req_has_ino_perm(
-        &self,
-        ino: u64,
-        req: &Request<'_>,
-        rwx: u16,
-    ) -> Result<bool, DBError> {
-        Ok(self.has_ino_perm(ino, req.uid(), req.gid(), rwx).await?)
-    }
+pub async fn sync_atime(pool: &SqlitePool, ino: u64) -> Result<(), DBError> {
+    query("UPDATE file_attrs SET atime = ? WHERE ino = ?")
+        .bind(i64::try_from(from_systime(SystemTime::now())?)?)
+        .bind(i64::try_from(ino)?)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
 
-    async fn has_ino_perm(&self, ino: u64, uid: u32, gid: u32, rwx: u16) -> Result<bool, DBError> {
-        let p_attrs = query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
-            .bind(i64::try_from(ino)?)
-            .fetch_one(&self.pool)
-            .await?;
+pub async fn has_ino_perm(
+    pool: &SqlitePool,
+    ino: u64,
+    uid: u32,
+    gid: u32,
+    rwx: u16,
+) -> Result<bool, DBError> {
+    let p_attrs = query_as::<_, FileAttrRow>("SELECT * FROM file_attrs WHERE ino = ?")
+        .bind(i64::try_from(ino)?)
+        .fetch_one(pool)
+        .await?;
 
-        Ok(has_perm(
-            p_attrs.uid,
-            p_attrs.gid,
-            p_attrs.perm,
-            uid,
-            gid,
-            rwx,
-        ))
-    }
+    Ok(has_perm(
+        p_attrs.uid,
+        p_attrs.gid,
+        p_attrs.perm,
+        uid,
+        gid,
+        rwx,
+    ))
+}
 
-    fn is_prefixed(&self, filename: &str) -> bool {
-        let prefix_position = filename.as_bytes().get(0..self.tag_prefix.len());
-        match prefix_position {
-            Some(oss) => oss == self.tag_prefix.as_bytes(),
-            None => false,
-        }
-    }
+pub async fn get_ino_name(pool: &SqlitePool, ino: i64) -> Result<String, DBError> {
+    query_scalar("SELECT name FROM file_names WHERE ino = ?")
+        .bind(ino)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| DBError::from(e))
+}
 
-    async fn get_ino_name(&self, ino: i64) -> Result<String, DBError> {
-        query_scalar("SELECT name FROM file_names WHERE ino = ?")
-            .bind(ino)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DBError::from(e))
-    }
+pub async fn get_db_page_size(pool: &SqlitePool) -> Result<u64, DBError> {
+    query_scalar("PRAGMA page_size")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| DBError::from(e))
+}
 
-    async fn get_db_page_size(&self) -> Result<u64, DBError> {
-        query_scalar("PRAGMA page_size")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DBError::from(e))
-    }
+pub async fn change_file_size(pool: &SqlitePool, ino: u64, new_size: u64) -> Result<(), DBError> {
+    let ino: i64 = ino.try_into()?;
+    let new_size: i64 = new_size.try_into()?;
+    let page_size: i64 = get_db_page_size(pool).await?.try_into()?;
+    let usize_page_size = page_size.try_into()?;
+    let new_last_page = new_size / page_size;
+    let new_last_page_size = new_size % page_size;
 
-    async fn change_file_size(&self, ino: u64, new_size: u64) -> Result<(), DBError> {
-        let ino: i64 = ino.try_into()?;
-        let new_size: i64 = new_size.try_into()?;
-        let page_size: i64 = self.get_db_page_size().await?.try_into()?;
-        let usize_page_size = page_size.try_into()?;
-        let new_last_page = new_size / page_size;
-        let new_last_page_size = new_size % page_size;
-
-        let create_new_last_page = || {
-            query("INSERT INTO file_contents (ino, page, bytes) VALUES (?,?,ZEROBLOB(?))")
-                .bind(ino)
-                .bind(new_last_page)
-                .bind(new_last_page_size)
-                .execute(&self.pool)
-        };
-        let truncate_new_last_page = || {
-            query(
-                "UPDATE file_contents SET bytes = CAST(SUBSTR(bytes, 1, ?) AS BLOB) WHERE ino = ? \
-                 and page = ?",
-            )
-            .bind(new_last_page_size)
+    let create_new_last_page = || {
+        query("INSERT INTO file_contents (ino, page, bytes) VALUES (?,?,ZEROBLOB(?))")
             .bind(ino)
             .bind(new_last_page)
-            .execute(&self.pool)
-        };
-
-        // check file has content
-        let old_last_page_query: Option<(i64, Vec<u8>)> = query_as(
-            "SELECT page, bytes FROM file_contents WHERE ino = ? ORDER BY page DESC LIMIT 1",
+            .bind(new_last_page_size)
+            .execute(pool)
+    };
+    let truncate_new_last_page = || {
+        query(
+            "UPDATE file_contents SET bytes = CAST(SUBSTR(bytes, 1, ?) AS BLOB) WHERE ino = ? and \
+             page = ?",
         )
+        .bind(new_last_page_size)
         .bind(ino)
-        .fetch_optional(&self.pool)
-        .await?;
-        if let Some((old_last_page, mut old_last_page_bytes)) = old_last_page_query {
-            if new_last_page > old_last_page {
-                // rpad old last page
-                old_last_page_bytes.resize(usize_page_size, 0);
-                query("UPDATE file_contents SET bytes = ? WHERE ino = ? and page = ?")
-                    .bind(old_last_page_bytes)
-                    .bind(ino)
-                    .bind(old_last_page)
-                    .execute(&self.pool)
-                    .await?;
+        .bind(new_last_page)
+        .execute(pool)
+    };
 
-                create_new_last_page().await?;
-            } else if new_last_page < old_last_page {
-                // delete pages > new_last_page
-                query("DELETE FROM file_contents WHERE ino = ? AND page > ?")
-                    .bind(ino)
-                    .bind(new_last_page)
-                    .execute(&self.pool)
-                    .await?;
-                // check if new_last_page exists
-                match query("SELECT 1 FROM file_contents WHERE ino = ? AND page = ?")
-                    .bind(ino)
-                    .bind(new_last_page)
-                    .fetch_optional(&self.pool)
-                    .await?
-                {
-                    Some(_) => truncate_new_last_page().await?,
-                    None => create_new_last_page().await?,
-                };
-            } else if new_last_page == old_last_page {
-                truncate_new_last_page().await?;
-            };
-        } else {
+    // check file has content
+    let old_last_page_query: Option<(i64, Vec<u8>)> =
+        query_as("SELECT page, bytes FROM file_contents WHERE ino = ? ORDER BY page DESC LIMIT 1")
+            .bind(ino)
+            .fetch_optional(pool)
+            .await?;
+    if let Some((old_last_page, mut old_last_page_bytes)) = old_last_page_query {
+        if new_last_page > old_last_page {
+            // rpad old last page
+            old_last_page_bytes.resize(usize_page_size, 0);
+            query("UPDATE file_contents SET bytes = ? WHERE ino = ? and page = ?")
+                .bind(old_last_page_bytes)
+                .bind(ino)
+                .bind(old_last_page)
+                .execute(pool)
+                .await?;
+
             create_new_last_page().await?;
+        } else if new_last_page < old_last_page {
+            // delete pages > new_last_page
+            query("DELETE FROM file_contents WHERE ino = ? AND page > ?")
+                .bind(ino)
+                .bind(new_last_page)
+                .execute(pool)
+                .await?;
+            // check if new_last_page exists
+            match query("SELECT 1 FROM file_contents WHERE ino = ? AND page = ?")
+                .bind(ino)
+                .bind(new_last_page)
+                .fetch_optional(pool)
+                .await?
+            {
+                Some(_) => truncate_new_last_page().await?,
+                None => create_new_last_page().await?,
+            };
+        } else if new_last_page == old_last_page {
+            truncate_new_last_page().await?;
         };
-        Ok(())
-    }
+    } else {
+        create_new_last_page().await?;
+    };
+    Ok(())
 }
 
 fn has_perm(f_uid: u32, f_gid: u32, f_perm: u16, uid: u32, gid: u32, rwx: u16) -> bool {

@@ -22,7 +22,7 @@ pub fn create_file<P: AsRef<Path>>(path: P) -> IoResult<File> {
 
 pub struct Test {
     pub rt: Runtime,
-    pub pool: SqlitePool,
+    pub pool: &'static SqlitePool,
     pub bg_sess: BackgroundSession,
 }
 
@@ -31,7 +31,18 @@ impl Test {
         tracing_subscriber::fmt::try_init().ok();
         init_paths!();
         let rt = Runtime::new().unwrap();
-        let pool = rt.block_on(init_pool!()).unwrap();
+        let pool = rt.block_on(async {
+            Box::leak(Box::new(
+                SqlitePool::connect_with(
+                    SqliteConnectOptions::from_str(format!("sqlite:{}", DB_PATH).as_str())
+                        .unwrap()
+                        .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
+                        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
+                )
+                .await
+                .unwrap(),
+            ))
+        });
         let bg_sess = init_sess!(rt, pool);
         Test { rt, pool, bg_sess }
     }

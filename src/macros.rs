@@ -11,8 +11,8 @@ macro_rules! handle_db_err {
 }
 
 macro_rules! handle_auth_perm {
-    ($self: expr, $ino: expr, $req: expr, $reply: expr, $rwx: expr) => {
-        let has_perm = handle_db_err!($self.req_has_ino_perm($ino, $req, $rwx).await, $reply);
+    ($pool: expr, $ino: expr, $uid: expr, $gid: expr, $reply: expr, $rwx: expr) => {
+        let has_perm = handle_db_err!(has_ino_perm($pool, $ino, $uid, $gid, $rwx).await, $reply);
         if !has_perm {
             $reply.error(libc::EACCES);
             return;

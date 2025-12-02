@@ -10,24 +10,13 @@ macro_rules! path {
         }};
     }
 
-macro_rules! init_pool {
-    () => {
-        SqlitePool::connect_with(
-            SqliteConnectOptions::from_str(format!("sqlite:{}", DB_PATH).as_str())
-                .unwrap()
-                .locking_mode(sqlx::sqlite::SqliteLockingMode::Normal)
-                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
-        )
-    };
-}
-
 macro_rules! init_sess {
     ($rt:expr, $pool:expr) => {
         spawn_mount2(
             HTFS {
                 runtime_handle: $rt.handle().clone(),
                 tag_prefix: "#".to_string(),
-                pool: $pool.clone(),
+                pool: $pool,
             },
             MP_PATH,
             &[],

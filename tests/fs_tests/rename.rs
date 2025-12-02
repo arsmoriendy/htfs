@@ -47,14 +47,14 @@ fn rename_u_p2p() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 1);
     assert!(new_tids.contains(&2));
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(pool),
     )
     .unwrap();
 
@@ -78,13 +78,13 @@ fn rename_u_p2u() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 0);
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(pool),
     )
     .unwrap();
 
@@ -108,14 +108,14 @@ fn rename_u_u2p() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 1);
     assert!(new_tids.contains(&1));
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(pool),
     )
     .unwrap();
 
@@ -139,13 +139,13 @@ fn rename_u_u2u() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 0);
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = 'new-child'").fetch_one(pool),
     )
     .unwrap();
 
@@ -169,7 +169,7 @@ fn rename_p_p2p() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 2);
     assert!(new_tids.contains(&2));
@@ -177,13 +177,13 @@ fn rename_p_p2p() {
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(pool),
     )
     .unwrap();
 
     // assert no dangling tags
     assert!(
-        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(&pool))
+        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(pool))
             .unwrap()
             .is_none()
     );
@@ -208,26 +208,26 @@ fn rename_p_p2u() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 1);
     assert!(new_tids.contains(&3));
 
     // assert child exists on new parent's dir_contents
     rt.block_on(
-        query("SELECT 1 FROM dir_contents WHERE dir_ino = 3 AND cnt_ino = 4").fetch_all(&pool),
+        query("SELECT 1 FROM dir_contents WHERE dir_ino = 3 AND cnt_ino = 4").fetch_all(pool),
     )
     .unwrap();
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(pool),
     )
     .unwrap();
 
     // assert no dangling tags
     assert!(
-        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(&pool))
+        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(pool))
             .unwrap()
             .is_none()
     );
@@ -252,7 +252,7 @@ fn rename_p_u2p() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 2);
     assert!(new_tids.contains(&1));
@@ -262,7 +262,7 @@ fn rename_p_u2p() {
     assert!(
         rt.block_on(
             query("SELECT 1 FROM dir_contents WHERE dir_ino = 2 AND cnt_ino = 4")
-                .fetch_optional(&pool)
+                .fetch_optional(pool)
         )
         .unwrap()
         .is_none()
@@ -270,13 +270,13 @@ fn rename_p_u2p() {
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(pool),
     )
     .unwrap();
 
     // assert no dangling tags
     assert!(
-        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(&pool))
+        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(pool))
             .unwrap()
             .is_none()
     );
@@ -301,14 +301,14 @@ fn rename_p_u2u() {
 
     // assert new tag association
     let new_tids: Vec<u64> = rt
-        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(&pool))
+        .block_on(query_scalar("SELECT tid FROM associated_tags WHERE ino = 4").fetch_all(pool))
         .unwrap();
     assert!(new_tids.len() == 1);
     assert!(new_tids.contains(&2));
 
     // assert child exists on new parent's dir_contents
     rt.block_on(
-        query("SELECT 1 FROM dir_contents WHERE dir_ino = 3 AND cnt_ino = 4").fetch_all(&pool),
+        query("SELECT 1 FROM dir_contents WHERE dir_ino = 3 AND cnt_ino = 4").fetch_all(pool),
     )
     .unwrap();
 
@@ -316,7 +316,7 @@ fn rename_p_u2u() {
     assert!(
         rt.block_on(
             query("SELECT 1 FROM dir_contents WHERE dir_ino = 2 AND cnt_ino = 4")
-                .fetch_optional(&pool)
+                .fetch_optional(pool)
         )
         .unwrap()
         .is_none()
@@ -324,13 +324,13 @@ fn rename_p_u2u() {
 
     // assert new name
     rt.block_on(
-        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(&pool),
+        query("SELECT 1 FROM file_names WHERE ino = 4 AND name = '#new-child'").fetch_one(pool),
     )
     .unwrap();
 
     // assert no dangling tags
     assert!(
-        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(&pool))
+        rt.block_on(query("SELECT 1 FROM tags WHERE name = '#child'").fetch_optional(pool))
             .unwrap()
             .is_none()
     );
