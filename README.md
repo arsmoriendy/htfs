@@ -1,4 +1,4 @@
-# htfs - Hash Tag File System
+# htfs - Hash-Tag File System
 
 > [!warning]
 > htfs is in early stages of development, and not suitable for daily use
