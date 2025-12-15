@@ -24,7 +24,7 @@ macro_rules! init_pool {
 macro_rules! init_sess {
     ($rt:expr, $pool:expr) => {
         spawn_mount2(
-            HTFS {
+            PTFS {
                 runtime_handle: $rt.handle().clone(),
                 tag_prefix: "#".to_string(),
                 pool: $pool.clone(),

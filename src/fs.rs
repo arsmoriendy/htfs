@@ -1,5 +1,5 @@
 use crate::{
-    HTFS,
+    PTFS,
     db_helpers::{
         chain_tagged_inos, try_bind_attrs,
         types::{FileAttrRow, ReadDirRow, mode_to_filetype, to_filetype},
@@ -14,7 +14,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-impl Filesystem for HTFS<Sqlite> {
+impl Filesystem for PTFS<Sqlite> {
     #[tracing::instrument]
     fn init(&mut self, req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), c_int> {
         self.runtime_handle.block_on(async {
@@ -617,7 +617,7 @@ impl Filesystem for HTFS<Sqlite> {
         })
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     fn write(
         &mut self,
         req: &Request<'_>,

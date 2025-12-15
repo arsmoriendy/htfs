@@ -1,7 +1,7 @@
-# htfs - Hash-Tag File System
+# PreTFS - Prefix-Tag File System
 
 > [!warning]
-> htfs is in early stages of development, and not suitable for daily use
+> PreTFS is in early stages of development, and not suitable for daily use
 
 Prefixed tag based, hierarchic file system.
 

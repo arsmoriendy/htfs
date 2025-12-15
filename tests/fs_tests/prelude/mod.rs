@@ -10,7 +10,7 @@ pub use std::{
 };
 
 pub use fuser::{BackgroundSession, spawn_mount2};
-pub use htfs::HTFS;
+pub use ptfs::PTFS;
 pub use rand::prelude::*;
 pub use sqlx::{SqlitePool, query, query_scalar, sqlite::SqliteConnectOptions};
 pub use tokio::runtime::Runtime;

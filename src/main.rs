@@ -5,7 +5,7 @@ use std::{
 };
 
 use clap::Parser;
-use htfs::HTFS;
+use ptfs::PTFS;
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use tokio::runtime::{Handle, Runtime};
 
@@ -46,7 +46,7 @@ fn main() {
         .await
         .unwrap();
 
-        HTFS {
+        PTFS {
             pool: pool,
             runtime_handle: Handle::current(),
             tag_prefix: prefix,
